@@ -1,0 +1,1120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ISRO / SIH26168 - AI-ML Intelligent Dead Reckoning</title>
+    <!-- Google Fonts: Roboto, Google Sans & Material Symbols -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Roboto+Mono:wght@400;500&family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+    
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <style>
+        /* ========================================================
+           Android Material Design 3 (Material You) Theme Tokens
+           ======================================================== */
+        :root {
+            --md-sys-color-background: #0f141a;
+            --md-sys-color-on-background: #e1e2e8;
+            --md-sys-color-surface: #121820;
+            --md-sys-color-surface-dim: #0d1217;
+            --md-sys-color-surface-bright: #363c44;
+            --md-sys-color-surface-container-lowest: #0a0e13;
+            --md-sys-color-surface-container-low: #181e26;
+            --md-sys-color-surface-container: #1e242d;
+            --md-sys-color-surface-container-high: #262c36;
+            --md-sys-color-surface-container-highest: #313843;
+            --md-sys-color-on-surface: #e1e2e8;
+            --md-sys-color-on-surface-variant: #c1c7ce;
+            
+            /* Material 3 Tonal Palette */
+            --md-sys-color-primary: #8cd6ab;
+            --md-sys-color-on-primary: #00391f;
+            --md-sys-color-primary-container: #00522f;
+            --md-sys-color-on-primary-container: #a7f2c6;
+
+            --md-sys-color-secondary: #7ccafb;
+            --md-sys-color-on-secondary: #00344f;
+            --md-sys-color-secondary-container: #004c70;
+            --md-sys-color-on-secondary-container: #c4e7ff;
+
+            --md-sys-color-tertiary: #ffb77c;
+            --md-sys-color-tertiary-container: #6e3900;
+            --md-sys-color-on-tertiary-container: #ffdcc2;
+
+            --md-sys-color-error: #ffb4ab;
+            --md-sys-color-on-error: #690005;
+            --md-sys-color-error-container: #93000a;
+            --md-sys-color-on-error-container: #ffdad6;
+
+            --md-sys-color-outline: #8b9198;
+            --md-sys-color-outline-variant: #41474e;
+
+            /* M3 Elevation Shadows */
+            --md-sys-elevation-1: 0 1px 3px 1px rgba(0, 0, 0, 0.25), 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+            --md-sys-elevation-2: 0 2px 6px 2px rgba(0, 0, 0, 0.25), 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+            --md-sys-elevation-3: 0 4px 8px 3px rgba(0, 0, 0, 0.25), 0 1px 3px 0 rgba(0, 0, 0, 0.3);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background-color: var(--md-sys-color-background);
+            color: var(--md-sys-color-on-background);
+            font-family: 'Roboto', 'Google Sans', sans-serif;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Material Symbols Styling */
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+            display: inline-block;
+        }
+        .material-symbols-filled {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+            display: inline-block;
+        }
+
+        /* ========================================================
+           M3 Top App Bar
+           ======================================================== */
+        .m3-top-app-bar {
+            background-color: var(--md-sys-color-surface-container-low);
+            padding: 10px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--md-sys-color-outline-variant);
+            z-index: 1000;
+        }
+
+        .m3-app-bar-leading {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .m3-nav-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--md-sys-color-surface-container-highest);
+            color: var(--md-sys-color-primary);
+        }
+
+        .m3-app-title-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .m3-app-title {
+            font-family: 'Google Sans', sans-serif;
+            font-size: 18px;
+            font-weight: 700;
+            letter-spacing: 0.15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--md-sys-color-on-surface);
+        }
+
+        .m3-app-subtitle {
+            font-size: 12px;
+            color: var(--md-sys-color-on-surface-variant);
+            letter-spacing: 0.25px;
+        }
+
+        /* M3 Chips */
+        .m3-chip-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .m3-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            height: 32px;
+            padding: 0 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 500;
+            font-family: 'Google Sans', sans-serif;
+            letter-spacing: 0.1px;
+            border: 1px solid var(--md-sys-color-outline-variant);
+            background: var(--md-sys-color-surface-container);
+            color: var(--md-sys-color-on-surface);
+        }
+
+        .m3-chip-isro {
+            background: linear-gradient(135deg, #e65100, #bf360c);
+            color: #ffffff;
+            border: none;
+            box-shadow: 0 1px 3px rgba(230, 81, 0, 0.4);
+        }
+
+        .m3-chip-sih {
+            background: var(--md-sys-color-secondary-container);
+            color: var(--md-sys-color-on-secondary-container);
+            border: 1px solid rgba(124, 202, 251, 0.3);
+        }
+
+        /* M3 Live Status Pill */
+        .m3-status-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            height: 36px;
+            padding: 0 16px;
+            border-radius: 18px;
+            font-size: 13px;
+            font-weight: 500;
+            font-family: 'Google Sans', sans-serif;
+            transition: all 0.3s cubic-bezier(0.2, 0, 0, 1);
+        }
+
+        .m3-status-active {
+            background-color: var(--md-sys-color-primary-container);
+            color: var(--md-sys-color-on-primary-container);
+            border: 1px solid rgba(140, 214, 171, 0.3);
+        }
+
+        .m3-status-outage {
+            background-color: var(--md-sys-color-error-container);
+            color: var(--md-sys-color-on-error-container);
+            border: 1px solid rgba(255, 180, 171, 0.5);
+            animation: pulseAlert 1.5s infinite;
+        }
+
+        @keyframes pulseAlert {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.9; transform: scale(1.02); }
+        }
+
+        .m3-pulse-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: currentColor;
+        }
+
+        /* ========================================================
+           Main Content Layout
+           ======================================================== */
+        .m3-main-container {
+            display: flex;
+            flex: 1;
+            height: calc(100vh - 61px);
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Map Canvas */
+        #map {
+            flex: 1;
+            height: 100%;
+            background-color: #121820;
+            z-index: 1;
+        }
+
+        /* M3 Floating Banner on Map (Tunnel Alert) */
+        .m3-floating-alert {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 999;
+            background-color: var(--md-sys-color-error-container);
+            color: var(--md-sys-color-on-error-container);
+            padding: 12px 24px;
+            border-radius: 28px;
+            display: none;
+            align-items: center;
+            gap: 12px;
+            box-shadow: var(--md-sys-elevation-3);
+            border: 1px solid rgba(255, 180, 171, 0.4);
+            font-family: 'Google Sans', sans-serif;
+            font-weight: 500;
+            font-size: 14px;
+            animation: slideDown 0.3s cubic-bezier(0.2, 0, 0, 1);
+        }
+
+        @keyframes slideDown {
+            from { opacity: 0; transform: translate(-50%, -20px); }
+            to { opacity: 1; transform: translate(-50%, 0); }
+        }
+
+        /* M3 Floating Map Controls */
+        .m3-map-layer-selector {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 999;
+            background: var(--md-sys-color-surface-container);
+            border-radius: 24px;
+            padding: 4px;
+            display: flex;
+            gap: 4px;
+            box-shadow: var(--md-sys-elevation-2);
+            border: 1px solid var(--md-sys-color-outline-variant);
+        }
+
+        .m3-segmented-btn {
+            border: none;
+            background: transparent;
+            color: var(--md-sys-color-on-surface-variant);
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+            font-family: 'Google Sans', sans-serif;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s ease;
+        }
+
+        .m3-segmented-btn.active {
+            background-color: var(--md-sys-color-secondary-container);
+            color: var(--md-sys-color-on-secondary-container);
+        }
+
+        /* ========================================================
+           M3 Side Sheet / Dashboard Panel
+           ======================================================== */
+        .m3-side-sheet {
+            width: 440px;
+            background-color: var(--md-sys-color-surface-container-low);
+            border-left: 1px solid var(--md-sys-color-outline-variant);
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            z-index: 10;
+            padding: 20px;
+            gap: 16px;
+            box-shadow: var(--md-sys-elevation-2);
+        }
+
+        .m3-side-sheet::-webkit-scrollbar {
+            width: 6px;
+        }
+        .m3-side-sheet::-webkit-scrollbar-thumb {
+            background: var(--md-sys-color-outline-variant);
+            border-radius: 3px;
+        }
+
+        /* M3 Cards */
+        .m3-card {
+            background-color: var(--md-sys-color-surface-container);
+            border-radius: 20px;
+            padding: 18px;
+            border: 1px solid var(--md-sys-color-outline-variant);
+            box-shadow: var(--md-sys-elevation-1);
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .m3-card:hover {
+            box-shadow: var(--md-sys-elevation-2);
+        }
+
+        .m3-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .m3-card-title {
+            font-family: 'Google Sans', sans-serif;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--md-sys-color-on-surface);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            letter-spacing: 0.1px;
+        }
+
+        .m3-card-title .material-symbols-outlined {
+            color: var(--md-sys-color-primary);
+            font-size: 20px;
+        }
+
+        /* Buttons Row */
+        .m3-btn-row {
+            display: flex;
+            gap: 10px;
+        }
+
+        /* M3 Filled Button */
+        .m3-btn-filled {
+            flex: 1;
+            height: 44px;
+            border-radius: 22px;
+            border: none;
+            background-color: var(--md-sys-color-primary);
+            color: var(--md-sys-color-on-primary);
+            font-family: 'Google Sans', sans-serif;
+            font-size: 13px;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            cursor: pointer;
+            box-shadow: var(--md-sys-elevation-1);
+            transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
+        }
+
+        .m3-btn-filled:hover {
+            box-shadow: var(--md-sys-elevation-2);
+            filter: brightness(1.05);
+        }
+
+        .m3-btn-filled:active {
+            transform: scale(0.98);
+        }
+
+        /* M3 Tonal / Outlined Button */
+        .m3-btn-tonal {
+            height: 44px;
+            padding: 0 20px;
+            border-radius: 22px;
+            border: 1px solid var(--md-sys-color-outline-variant);
+            background-color: var(--md-sys-color-surface-container-high);
+            color: var(--md-sys-color-on-surface);
+            font-family: 'Google Sans', sans-serif;
+            font-size: 13px;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .m3-btn-tonal:hover {
+            background-color: var(--md-sys-color-surface-container-highest);
+        }
+
+        /* ========================================================
+           M3 Switch Component (Material You Outage Switch)
+           ======================================================== */
+        .m3-switch-card {
+            background: var(--md-sys-color-surface-container-high);
+            border-radius: 18px;
+            padding: 14px 18px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border: 1px solid var(--md-sys-color-outline-variant);
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .m3-switch-label-group {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .m3-switch-title {
+            font-family: 'Google Sans', sans-serif;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--md-sys-color-on-surface);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .m3-switch-desc {
+            font-size: 11px;
+            color: var(--md-sys-color-on-surface-variant);
+        }
+
+        .m3-switch-track {
+            width: 52px;
+            height: 32px;
+            border-radius: 16px;
+            background-color: var(--md-sys-color-surface-container-highest);
+            border: 2px solid var(--md-sys-color-outline);
+            position: relative;
+            transition: all 0.25s cubic-bezier(0.2, 0, 0, 1);
+        }
+
+        .m3-switch-thumb {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background-color: var(--md-sys-color-outline);
+            position: absolute;
+            top: 6px;
+            left: 6px;
+            transition: all 0.25s cubic-bezier(0.2, 0, 0, 1);
+        }
+
+        .m3-switch-active .m3-switch-track {
+            background-color: var(--md-sys-color-error);
+            border-color: var(--md-sys-color-error);
+        }
+
+        .m3-switch-active .m3-switch-thumb {
+            left: 24px;
+            width: 22px;
+            height: 22px;
+            top: 3px;
+            background-color: var(--md-sys-color-on-error);
+        }
+
+        /* Metric Grid */
+        .m3-metrics-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .m3-metric-box {
+            background: var(--md-sys-color-surface-container-low);
+            border-radius: 14px;
+            padding: 12px 14px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .m3-metric-label {
+            font-size: 11px;
+            color: var(--md-sys-color-on-surface-variant);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-weight: 500;
+        }
+
+        .m3-metric-val {
+            font-family: 'Roboto Mono', monospace;
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--md-sys-color-on-surface);
+            display: flex;
+            align-items: baseline;
+            gap: 4px;
+        }
+
+        .m3-metric-unit {
+            font-family: 'Roboto', sans-serif;
+            font-size: 12px;
+            font-weight: 400;
+            color: var(--md-sys-color-on-surface-variant);
+        }
+
+        .m3-metric-highlight-speed {
+            color: var(--md-sys-color-secondary);
+        }
+
+        .m3-metric-highlight-ai {
+            color: var(--md-sys-color-primary);
+        }
+
+        .m3-metric-highlight-err {
+            color: var(--md-sys-color-error);
+        }
+
+        /* Progress / Adaptation bar */
+        .m3-progress-container {
+            width: 100%;
+            height: 6px;
+            background: var(--md-sys-color-surface-container-highest);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 4px;
+        }
+
+        .m3-progress-bar {
+            height: 100%;
+            width: 65%;
+            background: linear-gradient(90deg, var(--md-sys-color-secondary), var(--md-sys-color-primary));
+            border-radius: 3px;
+            transition: width 0.3s ease;
+        }
+
+        /* Legend items */
+        .m3-legend-container {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .m3-legend-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 12px;
+            color: var(--md-sys-color-on-surface);
+            background: var(--md-sys-color-surface-container-low);
+            padding: 8px 12px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.04);
+        }
+
+        .m3-legend-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 4px;
+            flex-shrink: 0;
+        }
+
+        /* Leaflet custom styling */
+        .leaflet-container {
+            background-color: #121820 !important;
+        }
+        .leaflet-control-zoom a {
+            background-color: var(--md-sys-color-surface-container-high) !important;
+            color: var(--md-sys-color-on-surface) !important;
+            border-color: var(--md-sys-color-outline-variant) !important;
+        }
+        .leaflet-control-attribution {
+            background: rgba(18, 24, 32, 0.8) !important;
+            color: var(--md-sys-color-on-surface-variant) !important;
+            font-size: 10px !important;
+            border-radius: 8px 0 0 0;
+        }
+        .leaflet-control-attribution a {
+            color: var(--md-sys-color-secondary) !important;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- M3 Top App Bar -->
+    <header class="m3-top-app-bar">
+        <div class="m3-app-bar-leading">
+            <div class="m3-nav-icon">
+                <span class="material-symbols-outlined">explore</span>
+            </div>
+            <div class="m3-app-title-group">
+                <div class="m3-app-title">
+                    <span>Intelligent Dead Reckoning</span>
+                    <span class="m3-chip m3-chip-isro">ISRO SMART VEHICLES</span>
+                    <span class="m3-chip m3-chip-sih">SIH26168</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="m3-chip-row">
+            <div id="statusBadge" class="m3-status-badge m3-status-active">
+                <div class="m3-pulse-dot"></div>
+                <span id="statusText">GNSS ACTIVE (WGS84 3D FIX)</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <div class="m3-main-container">
+
+        <!-- Map Layer Selector -->
+        <div class="m3-map-layer-selector">
+            <button class="m3-segmented-btn active" onclick="setTileLayer('esri_dark', this)">
+                <span class="material-symbols-outlined" style="font-size:16px;">dark_mode</span>
+                <span>Dark Canvas</span>
+            </button>
+            <button class="m3-segmented-btn" onclick="setTileLayer('osm_streets', this)">
+                <span class="material-symbols-outlined" style="font-size:16px;">map</span>
+                <span>Streets</span>
+            </button>
+            <button class="m3-segmented-btn" onclick="setTileLayer('esri_sat', this)">
+                <span class="material-symbols-outlined" style="font-size:16px;">satellite_alt</span>
+                <span>Satellite</span>
+            </button>
+        </div>
+
+        <!-- Floating Tunnel Alert Banner -->
+        <div id="tunnelAlert" class="m3-floating-alert">
+            <span class="material-symbols-outlined" style="font-size:22px;">warning</span>
+            <span><strong>GNSS BLACKOUT ACTIVE:</strong> Running purely on AI-ML Inertial Dead Reckoning + EKF</span>
+        </div>
+
+        <!-- Leaflet Map Container -->
+        <div id="map"></div>
+
+        <!-- M3 Right Side Sheet / Telemetry Deck -->
+        <aside class="m3-side-sheet">
+
+            <!-- Mission Controls Card -->
+            <div class="m3-card">
+                <div class="m3-card-header">
+                    <span class="m3-card-title">
+                        <span class="material-symbols-outlined">navigation</span>
+                        <span>Mission Simulation & Controls</span>
+                    </span>
+                    <span class="m3-chip" style="font-size:10px; height:24px; padding:0 8px;">IO-VNBD / 50Hz</span>
+                </div>
+
+                <div class="m3-btn-row">
+                    <button class="m3-btn-filled" onclick="startSimulation()">
+                        <span class="material-symbols-outlined">play_arrow</span>
+                        <span>Start 150s Drive Mission</span>
+                    </button>
+                    <button class="m3-btn-tonal" onclick="resetSim()">
+                        <span class="material-symbols-outlined">restart_alt</span>
+                        <span>Reset</span>
+                    </button>
+                </div>
+
+                <!-- Material You Interactive Outage Switch -->
+                <div id="outageSwitch" class="m3-switch-card" onclick="toggleOutage()">
+                    <div class="m3-switch-label-group">
+                        <span class="m3-switch-title">
+                            <span class="material-symbols-outlined" style="color:var(--md-sys-color-error); font-size:18px;">sensors_off</span>
+                            <span>Simulate Signal Loss (Tunnel Outage)</span>
+                        </span>
+                        <span class="m3-switch-desc">Drop GNSS feed to test edge dead reckoning</span>
+                    </div>
+                    <div class="m3-switch-track">
+                        <div class="m3-switch-thumb"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Real-Time Kinematics Card -->
+            <div class="m3-card">
+                <div class="m3-card-header">
+                    <span class="m3-card-title">
+                        <span class="material-symbols-outlined">speed</span>
+                        <span>Real-Time Vehicle Kinematics</span>
+                    </span>
+                    <span id="speedGaugeTag" class="m3-chip" style="font-size:11px; height:24px;">Cruising</span>
+                </div>
+
+                <div class="m3-metrics-grid">
+                    <div class="m3-metric-box">
+                        <span class="m3-metric-label">
+                            <span class="material-symbols-outlined" style="font-size:14px;">directions_car</span>
+                            <span>VEHICLE SPEED</span>
+                        </span>
+                        <div class="m3-metric-val m3-metric-highlight-speed">
+                            <span id="valSpeed">0.0</span>
+                            <span class="m3-metric-unit">km/h</span>
+                        </div>
+                    </div>
+
+                    <div class="m3-metric-box">
+                        <span class="m3-metric-label">
+                            <span class="material-symbols-outlined" style="font-size:14px;">compass_calibration</span>
+                            <span>HEADING (YAW)</span>
+                        </span>
+                        <div class="m3-metric-val">
+                            <span id="valHeading">0.0</span>
+                            <span class="m3-metric-unit">°</span>
+                        </div>
+                    </div>
+
+                    <div class="m3-metric-box">
+                        <span class="m3-metric-label">
+                            <span class="material-symbols-outlined" style="font-size:14px;">psychology</span>
+                            <span>AI PREDICTED SPEED</span>
+                        </span>
+                        <div class="m3-metric-val m3-metric-highlight-ai">
+                            <span id="valAISpeed">0.00</span>
+                            <span class="m3-metric-unit">m/s</span>
+                        </div>
+                    </div>
+
+                    <div class="m3-metric-box">
+                        <span class="m3-metric-label">
+                            <span class="material-symbols-outlined" style="font-size:14px;">rotate_right</span>
+                            <span>AI PREDICTED YAW RATE</span>
+                        </span>
+                        <div class="m3-metric-val m3-metric-highlight-ai">
+                            <span id="valAIYawRate">0.00</span>
+                            <span class="m3-metric-unit">°/s</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Runtime Self-Correction Card -->
+            <div class="m3-card">
+                <div class="m3-card-header">
+                    <span class="m3-card-title">
+                        <span class="material-symbols-outlined">auto_fix_high</span>
+                        <span>Runtime Self-Correction (Online Learning)</span>
+                    </span>
+                    <span class="m3-chip" style="background:var(--md-sys-color-primary-container); color:var(--md-sys-color-on-primary-container); border:none; font-size:11px; height:24px;">
+                        ADAPTING
+                    </span>
+                </div>
+
+                <div class="m3-metrics-grid">
+                    <div class="m3-metric-box">
+                        <span class="m3-metric-label">LEARNED GYRO BIAS</span>
+                        <div class="m3-metric-val" style="color:var(--md-sys-color-tertiary);">
+                            <span id="valGyroBias">0.0000</span>
+                            <span class="m3-metric-unit">rad/s</span>
+                        </div>
+                    </div>
+
+                    <div class="m3-metric-box">
+                        <span class="m3-metric-label">SPEED SCALE FACTOR</span>
+                        <div class="m3-metric-val">
+                            <span id="valScaleV">1.000</span>
+                            <span class="m3-metric-unit">×</span>
+                        </div>
+                    </div>
+
+                    <div class="m3-metric-box">
+                        <span class="m3-metric-label">LEARNED GPS STEPS</span>
+                        <div class="m3-metric-val">
+                            <span id="valSamples">0</span>
+                            <span class="m3-metric-unit">samples</span>
+                        </div>
+                    </div>
+
+                    <div class="m3-metric-box">
+                        <span class="m3-metric-label">EKF 1-SIGMA ACCURACY</span>
+                        <div class="m3-metric-val">
+                            <span id="valUncert">1.50</span>
+                            <span class="m3-metric-unit">m</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display:flex; flex-direction:column; gap:4px; margin-top:4px;">
+                    <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--md-sys-color-on-surface-variant);">
+                        <span>Device Drift Profile Adaptation Confidence</span>
+                        <span id="adaptConf">0.0%</span>
+                    </div>
+                    <div class="m3-progress-container">
+                        <div id="adaptProgressBar" class="m3-progress-bar" style="width: 0%;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Trajectory Trajectory Legend -->
+            <div class="m3-card">
+                <div class="m3-card-header">
+                    <span class="m3-card-title">
+                        <span class="material-symbols-outlined">layers</span>
+                        <span>Trajectory Comparison Legend</span>
+                    </span>
+                </div>
+
+                <div class="m3-legend-container">
+                    <div class="m3-legend-item">
+                        <div class="m3-legend-dot" style="background-color: var(--md-sys-color-secondary);"></div>
+                        <span><strong>Ground Truth / GNSS Path</strong> (Authoritative reference)</span>
+                    </div>
+                    <div class="m3-legend-item">
+                        <div class="m3-legend-dot" style="background-color: var(--md-sys-color-primary);"></div>
+                        <span><strong>AI-ML Intelligent DR + EKF</strong> (Drift-free trajectory)</span>
+                    </div>
+                    <div class="m3-legend-item">
+                        <div class="m3-legend-dot" style="background-color: var(--md-sys-color-error);"></div>
+                        <span><strong>Naive Low-Cost IMU DR</strong> (Rapid drift / runaway error)</span>
+                    </div>
+                </div>
+            </div>
+
+        </aside>
+    </div>
+
+    <!-- Application Script -->
+    <script>
+        // Leaflet Map Initialization (Bangalore ISRO reference coordinates)
+        const initLat = 12.9716;
+        const initLon = 77.5946;
+        const map = L.map('map', { zoomControl: false }).setView([initLat, initLon], 16);
+        L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+        // Tile layer definitions (clean, authentic, NO API KEY required!)
+        const tileProviders = {
+            esri_dark: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+                maxZoom: 19,
+                attribution: '&copy; Esri, HERE, Garmin'
+            }),
+            osm_streets: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            }),
+            esri_sat: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                maxZoom: 19,
+                attribution: '&copy; Esri, Maxar, Earthstar Geographics'
+            })
+        };
+
+        let currentTile = tileProviders.esri_dark.addTo(map);
+
+        function setTileLayer(providerKey, btnElement) {
+            map.removeLayer(currentTile);
+            currentTile = tileProviders[providerKey].addTo(map);
+            document.querySelectorAll('.m3-segmented-btn').forEach(btn => btn.classList.remove('active'));
+            btnElement.classList.add('active');
+        }
+
+        // Trajectory Polyline Overlays
+        const gtPoly = L.polyline([], {
+            color: '#7ccafb',
+            weight: 4,
+            opacity: 0.8,
+            dashArray: '8, 6'
+        }).addTo(map);
+
+        const aiPoly = L.polyline([], {
+            color: '#8cd6ab',
+            weight: 5,
+            opacity: 0.95
+        }).addTo(map);
+
+        const naivePoly = L.polyline([], {
+            color: '#ffb4ab',
+            weight: 3,
+            opacity: 0.6,
+            dashArray: '4, 4'
+        }).addTo(map);
+
+        // M3 Vehicle Marker with Radar Pulse and Heading Arrow
+        const vehicleIcon = L.divIcon({
+            className: 'vehicle-marker',
+            html: `
+                <div id="vehicleRadarIcon" style="position:relative; width:28px; height:28px; transform-origin:center center; transition:transform 0.1s linear;">
+                    <div style="position:absolute; width:28px; height:28px; border-radius:50%; background:rgba(140,214,171,0.25); animation:pulseRadar 1.6s infinite;"></div>
+                    <div style="position:absolute; top:4px; left:4px; width:20px; height:20px; border-radius:50%; background-color:#8cd6ab; border:2.5px solid #ffffff; box-shadow:0 0 12px #8cd6ab; display:flex; align-items:center; justify-content:center;">
+                        <div style="width:0; height:0; border-left:4px solid transparent; border-right:4px solid transparent; border-bottom:8px solid #00391f; margin-bottom:2px;"></div>
+                    </div>
+                </div>
+                <style>
+                    @keyframes pulseRadar {
+                        0% { transform:scale(0.8); opacity:0.8; }
+                        100% { transform:scale(2.2); opacity:0; }
+                    }
+                </style>
+            `,
+            iconSize: [28, 28],
+            iconAnchor: [14, 14]
+        });
+        const vehicleMarker = L.marker([initLat, initLon], { icon: vehicleIcon }).addTo(map);
+
+        // State tracking for smooth non-jittery rendering
+        let ws = null;
+        let outageManual = false;
+        let lastPanTime = 0;
+        let lastAiRef = { pt: null };
+        let lastNaiveRef = { pt: null };
+        let lastGtRef = { pt: null };
+
+        function addPointSmooth(poly, lat, lon, refObj) {
+            if (!refObj.pt) {
+                poly.addLatLng([lat, lon]);
+                refObj.pt = [lat, lon];
+                return;
+            }
+            const dLat = lat - refObj.pt[0];
+            const dLon = lon - refObj.pt[1];
+            // Filter sub-meter micro jitters
+            if (dLat * dLat + dLon * dLon > 3e-11) {
+                poly.addLatLng([lat, lon]);
+                refObj.pt = [lat, lon];
+            }
+        }
+
+        function updateMapViewportSmooth(lat, lon) {
+            const now = performance.now();
+            const bounds = map.getBounds();
+            // Only re-center when approaching viewport margin or every 1.4s
+            const isNearEdge = !bounds.pad(-0.25).contains([lat, lon]);
+            if (isNearEdge || (now - lastPanTime > 1400)) {
+                map.panTo([lat, lon], { animate: true, duration: 0.7, easeLinearity: 0.25 });
+                lastPanTime = now;
+            }
+        }
+
+        function connectWS() {
+            const loc = window.location;
+            const wsUri = (loc.protocol === 'https:' ? 'wss://' : 'ws://') + loc.host + '/ws/telemetry';
+            ws = new WebSocket(wsUri);
+
+            ws.onopen = () => {
+                console.log('[M3] Connected to IDR WebSocket backend');
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                handleTelemetry(data);
+            };
+
+            ws.onclose = () => {
+                setTimeout(connectWS, 2000);
+            };
+        }
+
+        connectWS();
+
+        function handleTelemetry(data) {
+            const aiLat = data.estimated_lat;
+            const aiLon = data.estimated_lon;
+            const naiveLat = data.naive_lat;
+            const naiveLon = data.naive_lon;
+            const gtLat = data.gt_lat || aiLat;
+            const gtLon = data.gt_lon || aiLon;
+
+            addPointSmooth(aiPoly, aiLat, aiLon, lastAiRef);
+            addPointSmooth(naivePoly, naiveLat, naiveLon, lastNaiveRef);
+            if (data.gt_lat) {
+                addPointSmooth(gtPoly, gtLat, gtLon, lastGtRef);
+            }
+
+            vehicleMarker.setLatLng([aiLat, aiLon]);
+            updateMapViewportSmooth(aiLat, aiLon);
+
+            // Rotate vehicle heading arrow
+            const headingDeg = (data.heading_deg || 0);
+            const iconDiv = document.getElementById('vehicleRadarIcon');
+            if (iconDiv) {
+                // Compass heading: 0° is North (pointing up), clockwise
+                iconDiv.style.transform = `rotate(${headingDeg}deg)`;
+            }
+
+            // Update M3 Status Badge & Alert
+            const badge = document.getElementById('statusBadge');
+            const statusText = document.getElementById('statusText');
+            const alertBox = document.getElementById('tunnelAlert');
+            const switchEl = document.getElementById('outageSwitch');
+
+            if (data.outage_active) {
+                badge.className = 'm3-status-badge m3-status-outage';
+                statusText.innerText = 'TUNNEL OUTAGE (AI-ML DR ACTIVE)';
+                alertBox.style.display = 'flex';
+                switchEl.classList.add('m3-switch-active');
+            } else {
+                badge.className = 'm3-status-badge m3-status-active';
+                statusText.innerText = 'GNSS ACTIVE (WGS84 3D FIX)';
+                alertBox.style.display = 'none';
+                if (!outageManual) {
+                    switchEl.classList.remove('m3-switch-active');
+                }
+            }
+
+            // Update Vehicle Kinematics
+            const spd = (data.velocity_kmh || 0);
+            document.getElementById('valSpeed').innerText = spd.toFixed(1);
+            document.getElementById('valHeading').innerText = headingDeg.toFixed(1);
+            document.getElementById('valAISpeed').innerText = (data.ml_pred_vel_ms || 0).toFixed(2);
+            document.getElementById('valAIYawRate').innerText = (data.ml_pred_yaw_rate_degs || 0).toFixed(2);
+
+            const spdTag = document.getElementById('speedGaugeTag');
+            if (spd < 1.0) spdTag.innerText = 'Stationary (ZUPT)';
+            else if (spd < 35.0) spdTag.innerText = 'City Maneuvering';
+            else spdTag.innerText = 'Highway Cruising';
+
+            // Online Calibration Metrics
+            if (data.calibration_profile) {
+                const samples = data.calibration_profile.samples_learned || 0;
+                const scaleV = data.calibration_profile.scale_v || 1.0;
+                document.getElementById('valGyroBias').innerText = (data.gyro_bias_rads || 0).toFixed(4);
+                document.getElementById('valScaleV').innerText = scaleV.toFixed(3);
+                document.getElementById('valSamples').innerText = samples;
+
+                // Dynamically calculate and animate profile adaptation confidence
+                let conf = 0.0;
+                if (samples > 0) {
+                    // Smooth saturation curve approaching 99.4% as samples increase
+                    conf = Math.min(99.4, 25.0 + (samples / 120.0) * 72.0);
+                }
+                const confEl = document.getElementById('adaptConf');
+                const progEl = document.getElementById('adaptProgressBar');
+                if (confEl) confEl.innerText = conf.toFixed(1) + '%';
+                if (progEl) progEl.style.width = conf.toFixed(1) + '%';
+            }
+
+            document.getElementById('valUncert').innerText = (data.pos_uncertainty_m || 0).toFixed(2);
+        }
+
+        function startSimulation() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                aiPoly.setLatLngs([]);
+                naivePoly.setLatLngs([]);
+                gtPoly.setLatLngs([]);
+                lastAiRef = { pt: null };
+                lastNaiveRef = { pt: null };
+                lastGtRef = { pt: null };
+                lastPanTime = 0;
+                outageManual = false;
+
+                document.getElementById('outageSwitch').classList.remove('m3-switch-active');
+                document.getElementById('statusBadge').className = 'm3-status-badge m3-status-active';
+                document.getElementById('statusText').innerText = 'GNSS ACTIVE (WGS84 3D FIX)';
+                document.getElementById('tunnelAlert').style.display = 'none';
+
+                ws.send(JSON.stringify({
+                    command: 'start_simulation',
+                    duration: 120.0,
+                    outage_start: 24.0,   // Normal GPS driving for first 24s
+                    outage_end: 45.0      // Tunnel underpass outage between 24s and 45s
+                }));
+            }
+        }
+
+        function toggleOutage() {
+            outageManual = !outageManual;
+            const switchEl = document.getElementById('outageSwitch');
+            if (outageManual) {
+                switchEl.classList.add('m3-switch-active');
+            } else {
+                switchEl.classList.remove('m3-switch-active');
+            }
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    command: 'toggle_outage',
+                    value: outageManual
+                }));
+            }
+        }
+
+        function resetSim() {
+            aiPoly.setLatLngs([]);
+            naivePoly.setLatLngs([]);
+            gtPoly.setLatLngs([]);
+            lastAiRef = { pt: null };
+            lastNaiveRef = { pt: null };
+            lastGtRef = { pt: null };
+            outageManual = false;
+            document.getElementById('outageSwitch').classList.remove('m3-switch-active');
+            document.getElementById('statusBadge').className = 'm3-status-badge m3-status-active';
+            document.getElementById('statusText').innerText = 'GNSS ACTIVE (WGS84 3D FIX)';
+            document.getElementById('tunnelAlert').style.display = 'none';
+            const confEl = document.getElementById('adaptConf');
+            const progEl = document.getElementById('adaptProgressBar');
+            if (confEl) confEl.innerText = '0.0%';
+            if (progEl) progEl.style.width = '0%';
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ command: 'reset' }));
+            }
+        }
+    </script>
+</body>
+</html>

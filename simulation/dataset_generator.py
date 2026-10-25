@@ -15,6 +15,197 @@ class VehicularTrajectoryGenerator:
         self.dt = 1.0 / sampling_rate_hz
         self.rng = np.random.RandomState(seed)
 
+    # Exact road centerline waypoints along MG Road, Bangalore
+    # From Anil Kumble Circle (12.974938, 77.609009) to Mayo Hall / Garuda Mall (12.973033, 77.617149)
+    # Extracted directly from OpenStreetMap road network
+    MGROAD_WAYPOINTS = [
+        [77.609009, 12.974938], [77.61101, 12.974467], [77.611037, 12.974461], [77.611066, 12.974454],
+        [77.611112, 12.974442], [77.611184, 12.974426], [77.611245, 12.974413], [77.611541, 12.974342],
+        [77.611588, 12.974331], [77.612831, 12.974033], [77.613772, 12.973808], [77.61379, 12.973804],
+        [77.613855, 12.973788], [77.613953, 12.973766], [77.613989, 12.973757], [77.614552, 12.973633],
+        [77.615193, 12.973487], [77.615303, 12.973461], [77.615654, 12.973379], [77.615712, 12.973366],
+        [77.615796, 12.973347], [77.616156, 12.973267], [77.616343, 12.973226], [77.616367, 12.973221],
+        [77.616608, 12.973163], [77.616809, 12.973115], [77.616868, 12.973101], [77.616899, 12.973093],
+        [77.616955, 12.97308], [77.617069, 12.973053], [77.617149, 12.973033]
+    ]
+
+    def generate_bangalore_mgroad_drive(
+        self,
+        duration_sec: float = 60.0,
+        outage_windows: List[Tuple[float, float]] = None,
+        accel_bias: float = 0.04,
+        gyro_bias: float = 0.015,
+        vibration_amp: float = 0.2,
+        tilt_pitch_deg: float = 2.0
+    ) -> Dict[str, np.ndarray]:
+        """
+        Generates realistic mobile vehicular drive SNAPPED DIRECTLY to MG Road, Bangalore.
+        Eliminates random building/grass collisions by following actual asphalt road centerline!
+        Simulates GNSS signal loss under the Namma Metro overhead viaduct.
+        """
+        if outage_windows is None:
+            # Default Metro canyon outage: from 16s to 36s (20s duration)
+            outage_windows = [(16.0, 36.0)]
+
+        nodes = self.MGROAD_WAYPOINTS
+        ref_lat = nodes[0][1]
+        ref_lon = nodes[0][0]
+
+        # Convert road nodes to local ENU (East-North-Up)
+        lat_rad = math.radians(ref_lat)
+        m_per_deg_lat = 111132.954 - 559.822 * math.cos(2.0 * lat_rad)
+        m_per_deg_lon = 111412.84 * math.cos(lat_rad)
+
+        node_e = np.array([(pt[0] - ref_lon) * m_per_deg_lon for pt in nodes])
+        node_n = np.array([(pt[1] - ref_lat) * m_per_deg_lat for pt in nodes])
+
+        seg_dists = np.hypot(np.diff(node_e), np.diff(node_n))
+        cum_dist = np.insert(np.cumsum(seg_dists), 0, 0.0)
+        total_road_dist = cum_dist[-1]
+
+        total_steps = int(duration_sec * self.fs)
+        time = np.linspace(0.0, duration_sec, total_steps, endpoint=False)
+
+        # Smooth vehicular speed profile matching Bangalore city traffic:
+        # 0-5s: Accelerate from Anil Kumble signal (0 to 16.5 m/s = 60 km/h)
+        # 5-46s: Cruise along MG Road past Brigade Rd & Church St
+        # 46-56s: Decelerate to stop at Mayo Hall signal
+        # 56-60s: Stationary at red light (ZUPT demonstration)
+        t_accel = 5.0
+        t_cruise = 41.0
+        t_decel = 10.0
+        cruise_v = total_road_dist / (0.5 * t_accel + t_cruise + 0.5 * t_decel)
+
+        gt_speed = np.zeros(total_steps, dtype=np.float64)
+        gt_accel_fwd = np.zeros(total_steps, dtype=np.float64)
+
+        for i, ti in enumerate(time):
+            if ti < t_accel:
+                a = cruise_v / t_accel
+                gt_accel_fwd[i] = a
+                gt_speed[i] = a * ti
+            elif ti < (t_accel + t_cruise):
+                gt_accel_fwd[i] = 0.0
+                gt_speed[i] = cruise_v
+            elif ti < (t_accel + t_cruise + t_decel):
+                a = -cruise_v / t_decel
+                gt_accel_fwd[i] = a
+                gt_speed[i] = max(0.0, cruise_v + a * (ti - (t_accel + t_cruise)))
+            else:
+                gt_accel_fwd[i] = 0.0
+                gt_speed[i] = 0.0
+
+        # Arc-length position along road centerline
+        s_progress = np.cumsum(gt_speed * self.dt)
+        s_progress = np.clip(s_progress, 0.0, total_road_dist)
+
+        # Smooth position interpolation on road nodes
+        gt_east = np.interp(s_progress, cum_dist, node_e)
+        gt_north = np.interp(s_progress, cum_dist, node_n)
+
+        # Compute heading from road tangent vector
+        de = np.gradient(gt_east, self.dt)
+        dn = np.gradient(gt_north, self.dt)
+
+        gt_yaw = np.zeros(total_steps, dtype=np.float64)
+        gt_yaw_rate = np.zeros(total_steps, dtype=np.float64)
+
+        last_valid_yaw = math.atan2(dn[1], de[1]) if len(dn) > 1 else 0.0
+        for i in range(total_steps):
+            if gt_speed[i] > 0.2:
+                last_valid_yaw = math.atan2(dn[i], de[i])
+            gt_yaw[i] = last_valid_yaw
+
+        # Yaw rate from derivative of unwrapped heading
+        unwrapped_yaw = np.unwrap(gt_yaw)
+        gt_yaw_rate = np.gradient(unwrapped_yaw, self.dt)
+        # Suppress yaw rate when stationary
+        gt_yaw_rate[gt_speed < 0.2] = 0.0
+
+        # Centripetal acceleration
+        gt_accel_lat = gt_speed * gt_yaw_rate
+
+        # -------------------------------------------------------------
+        # Generate Realistic Noisy Smartphone IMU measurements
+        # -------------------------------------------------------------
+        engine_vibe_x = vibration_amp * np.sin(2.0 * np.pi * 24.0 * time)
+        engine_vibe_y = vibration_amp * np.cos(2.0 * np.pi * 28.0 * time)
+        engine_vibe_z = 0.5 * vibration_amp * np.sin(2.0 * np.pi * 18.0 * time)
+
+        drift_rate_gyro = self.rng.normal(0.0, 1e-4, total_steps).cumsum()
+        drift_rate_accel = self.rng.normal(0.0, 1e-4, total_steps).cumsum()
+
+        pitch_rad = math.radians(tilt_pitch_deg)
+        g = 9.80665
+
+        # Smartphone accelerometer with gravity leakage and noise
+        meas_ax = (
+            gt_accel_fwd * math.cos(pitch_rad)
+            - g * math.sin(pitch_rad)
+            + accel_bias
+            + drift_rate_accel
+            + engine_vibe_x
+            + self.rng.normal(0.0, 0.08, total_steps)
+        )
+        meas_ay = (
+            gt_accel_lat
+            + self.rng.normal(0.0, 0.01, total_steps).cumsum() * 0.02
+            + engine_vibe_y
+            + self.rng.normal(0.0, 0.08, total_steps)
+        )
+        meas_az = (
+            g * math.cos(pitch_rad)
+            + gt_accel_fwd * math.sin(pitch_rad)
+            + engine_vibe_z
+            + self.rng.normal(0.0, 0.12, total_steps)
+        )
+
+        meas_gx = self.rng.normal(0.0, 0.005, total_steps)
+        meas_gy = self.rng.normal(0.0, 0.005, total_steps)
+        meas_gz = (
+            gt_yaw_rate
+            + gyro_bias
+            + drift_rate_gyro
+            + self.rng.normal(0.0, 0.008, total_steps)
+        )
+
+        # GNSS Observations & Outages
+        gps_mask = np.ones(total_steps, dtype=bool)
+        for s, e in outage_windows:
+            gps_mask[(time >= s) & (time <= e)] = False
+
+        gps_noise_e = self.rng.normal(0.0, 1.2, total_steps)
+        gps_noise_n = self.rng.normal(0.0, 1.2, total_steps)
+        gps_east = gt_east + gps_noise_e
+        gps_north = gt_north + gps_noise_n
+        gps_speed = np.clip(gt_speed + self.rng.normal(0.0, 0.2, total_steps), 0.0, None)
+        gps_bearing = (gt_yaw + self.rng.normal(0.0, math.radians(2.0), total_steps))
+
+        return {
+            "time": time,
+            "dt": self.dt,
+            "fs": self.fs,
+            "ref_lat": ref_lat,
+            "ref_lon": ref_lon,
+            "accel_x": meas_ax.astype(np.float32),
+            "accel_y": meas_ay.astype(np.float32),
+            "accel_z": meas_az.astype(np.float32),
+            "gyro_x": meas_gx.astype(np.float32),
+            "gyro_y": meas_gy.astype(np.float32),
+            "gyro_z": meas_gz.astype(np.float32),
+            "gt_speed": gt_speed.astype(np.float32),
+            "gt_yaw_rate": gt_yaw_rate.astype(np.float32),
+            "gt_yaw": gt_yaw.astype(np.float32),
+            "gt_east": gt_east.astype(np.float32),
+            "gt_north": gt_north.astype(np.float32),
+            "gps_mask": gps_mask,
+            "gps_east": gps_east.astype(np.float32),
+            "gps_north": gps_north.astype(np.float32),
+            "gps_speed": gps_speed.astype(np.float32),
+            "gps_bearing": gps_bearing.astype(np.float32),
+            "in_outage": ~gps_mask,
+        }
+
     def generate_synthetic_drive(
         self,
         duration_sec: float = 180.0,

@@ -58,6 +58,10 @@ class NavigationCore:
         self.naive_vel = 0.0
         self.naive_yaw = 0.0
 
+        # Physical zero-velocity (ZUPT) and road tilt tracking
+        self.is_vehicle_stopped = False
+        self.stop_pitch_bias = 0.0
+
         # Online runtime self-correction engine
         self.calibrator = OnlineDriftCalibrator(profile_path="device_drift_profile.json")
 
@@ -89,6 +93,8 @@ class NavigationCore:
         self.naive_north = 0.0
         self.naive_vel = 0.0
         self.naive_yaw = 0.0
+        self.is_vehicle_stopped = False
+        self.stop_pitch_bias = 0.0
         self.imu_buffer.clear()
         self.force_outage = False
         self.last_imu_timestamp = None
@@ -132,13 +138,33 @@ class NavigationCore:
         Run inference on (50, 6) IMU window.
         Returns: (pred_velocity, var_velocity, pred_yaw_rate, var_yaw_rate)
         """
+        # 1. Zero-Velocity (ZUPT) Gatekeeper:
+        # A vehicle is only genuinely stationary if IMU variance is low AND the vehicle was already stopped / near zero (< 0.8 m/s).
+        # When cruising at highway speed (e.g. 58 km/h), IMU variance is also very smooth, so we must never freeze cruising cars!
+        prior_v = float(self.ekf.x[2]) if hasattr(self, 'ekf') else 0.0
+        accel_var = np.var(imu_window[:, 0]) + np.var(imu_window[:, 1]) + np.var(imu_window[:, 2])
+        gyro_var = np.var(imu_window[:, 3]) + np.var(imu_window[:, 4]) + np.var(imu_window[:, 5])
+        if prior_v < 0.8 and accel_var < 0.03 and gyro_var < 0.002:
+            return 0.0, 0.001, 0.0, 0.0001
+
+        # 2. PyTorch Model Inference
         if self.model is not None:
             try:
                 import torch
                 with torch.no_grad():
                     inp = torch.from_numpy(imu_window).float().unsqueeze(0).to(self.device)
                     vel, vel_var, yr, yr_var = self.model(inp)
-                    return float(vel.item()), float(vel_var.item()), float(yr.item()), float(yr_var.item())
+                    v_val = float(vel.item())
+                    yr_val = float(yr.item())
+                    
+                    # Decoupled Sanity Check: A car cannot execute an un-commanded 600 deg/s spin.
+                    # If neural prediction diverges wildly from physical MEMS gyro, clamp to gyro bounds
+                    # to prevent smartphone tilt from causing phantom circular loops!
+                    meas_gz = float(np.mean(imu_window[:, 5]))
+                    if abs(yr_val - meas_gz) > 0.06:
+                        yr_val = meas_gz
+
+                    return v_val, float(vel_var.item()), yr_val, float(yr_var.item())
             except Exception:
                 pass
 
@@ -150,17 +176,9 @@ class NavigationCore:
             except Exception:
                 pass
 
-        # Intelligent Signal Processing / Analytical Kinematic Fallback
-        # Extracts vibration-filtered acceleration and gyro rate
+        # Analytical Kinematic Fallback
         accel_fwd = np.mean(imu_window[:, 0])
         gyro_yaw = np.mean(imu_window[:, 5])
-
-        # Stationary detection (ZUPT filter)
-        accel_var = np.var(imu_window[:, 0]) + np.var(imu_window[:, 1]) + np.var(imu_window[:, 2])
-        gyro_var = np.var(imu_window[:, 3]) + np.var(imu_window[:, 4]) + np.var(imu_window[:, 5])
-
-        if accel_var < 0.04 and gyro_var < 0.002:
-            return 0.0, 0.01, 0.0, 0.0005
 
         current_v = max(0.0, self.ekf.x[2] + (accel_fwd - self.calibrator.bias_v) * 0.02)
         return current_v, 0.25, float(gyro_yaw), 0.005
@@ -182,18 +200,37 @@ class NavigationCore:
         ], dtype=np.float32)
         self.imu_buffer.append(sample)
 
+        # Physical Zero-Velocity (ZUPT) and Road Pitch Incline Detection
+        curr_v = max(0.0, self.ekf.x[2])
+        if not self.is_vehicle_stopped:
+            # Vehicle decelerated to a stop (crawl speed + no angular yaw turn + non-acceleration)
+            if (curr_v < 0.8 or self.naive_vel < 0.2) and abs(imu.gyro_z) < 0.04 and imu.accel_x < 0.35:
+                self.is_vehicle_stopped = True
+                self.stop_pitch_bias = imu.accel_x
+        else:
+            # While stopped: only break stop lock if driver presses throttle (positive dynamic acceleration kick)
+            if (imu.accel_x - self.stop_pitch_bias) > 0.45:
+                self.is_vehicle_stopped = False
+            else:
+                self.stop_pitch_bias = 0.95 * self.stop_pitch_bias + 0.05 * imu.accel_x
+
         # -------------------------------------------------------------
         # 1. Update Naive Baseline Dead Reckoning (to illustrate drift!)
         # -------------------------------------------------------------
-        self.naive_yaw += imu.gyro_z * dt
-        self.naive_vel = max(0.0, self.naive_vel + imu.accel_x * dt)
-        self.naive_east += self.naive_vel * math.cos(self.naive_yaw) * dt
-        self.naive_north += self.naive_vel * math.sin(self.naive_yaw) * dt
+        if self.is_vehicle_stopped:
+            self.naive_vel = 0.0
+        else:
+            self.naive_yaw += imu.gyro_z * dt
+            self.naive_vel = max(0.0, self.naive_vel + imu.accel_x * dt)
+            self.naive_east += self.naive_vel * math.cos(self.naive_yaw) * dt
+            self.naive_north += self.naive_vel * math.sin(self.naive_yaw) * dt
 
         # -------------------------------------------------------------
         # 2. Intelligent EKF Prediction Step
         # -------------------------------------------------------------
-        self.ekf.predict(dt=dt, accel_fwd=imu.accel_x, gyro_yaw_rate=imu.gyro_z)
+        effective_accel = 0.0 if self.is_vehicle_stopped else (imu.accel_x - self.stop_pitch_bias)
+        effective_gyro = 0.0 if self.is_vehicle_stopped else imu.gyro_z
+        self.ekf.predict(dt=dt, accel_fwd=effective_accel, gyro_yaw_rate=effective_gyro)
 
         # -------------------------------------------------------------
         # 3. Intelligent Deep Learning Feature Inference
@@ -257,8 +294,12 @@ class NavigationCore:
             )
 
             if is_stationary:
+                self.is_vehicle_stopped = True
+                self.stop_pitch_bias = imu.accel_x
                 self.ekf.update_zupt(measured_yaw_rate=imu.gyro_z)
                 self.naive_vel = 0.0
+            else:
+                self.is_vehicle_stopped = False
 
             # EKF updates with authoritative GNSS observations
             self.ekf.update_gnss(
@@ -268,12 +309,8 @@ class NavigationCore:
                 bearing_rad=bearing_rad,
                 pos_accuracy_m=gnss.accuracy_m or 3.0
             )
-            # Sync naive DR during active GPS so drift accumulates strictly from outage start
-            self.naive_east = gps_e
-            self.naive_north = gps_n
-            self.naive_vel = gnss.speed_ms if gnss.speed_ms is not None else self.naive_vel
-            if bearing_rad is not None:
-                self.naive_yaw = bearing_rad
+            # Keep naive DR free from artificial mid-drive GPS snapping to show true uncorrected drift
+            pass
 
         elif is_outage:
             # -------------------------------------------------------------
@@ -281,18 +318,31 @@ class NavigationCore:
             # -------------------------------------------------------------
             self.ekf.mark_outage(dt)
 
-            # Apply online-learned device corrections to ML predictions
-            calib_v, calib_yr = self.calibrator.apply_correction(pred_v, pred_yr)
+            if self.is_vehicle_stopped:
+                self.ekf.update_zupt(measured_yaw_rate=imu.gyro_z)
+                self.naive_vel = 0.0
+            else:
+                # In motion during outage:
+                calib_v, _ = self.calibrator.apply_correction(pred_v, pred_yr)
+                kinematic_v = max(0.0, self.ekf.x[2])
 
-            # EKF measurement update using ML drift-corrected speed and yaw rate
-            self.ekf.update_ml_prediction(
-                predicted_velocity=calib_v,
-                predicted_yaw_rate=calib_yr,
-                var_velocity=var_v,
-                var_yaw_rate=var_yr,
-                dt=dt,
-                measured_gyro_yaw_rate=imu.gyro_z
-            )
+                # When braking, velocity must strictly follow deceleration kinematics
+                if effective_accel < -0.15:
+                    fused_v = min(kinematic_v, calib_v)
+                else:
+                    fused_v = kinematic_v if abs(calib_v - kinematic_v) > 2.5 else calib_v
+
+                calib_yr = imu.gyro_z - self.calibrator.bias_yaw
+
+                # EKF measurement update using ML drift-corrected speed and physical gyro yaw rate
+                self.ekf.update_ml_prediction(
+                    predicted_velocity=fused_v,
+                    predicted_yaw_rate=calib_yr,
+                    var_velocity=1.5,
+                    var_yaw_rate=0.001,
+                    dt=dt,
+                    measured_gyro_yaw_rate=imu.gyro_z
+                )
         else:
             # Normal sub-second inertial propagation between 1 Hz GNSS fixes:
             # EKF kinematic state was already updated by self.ekf.predict(dt)
@@ -400,19 +450,69 @@ async def websocket_telemetry(websocket: WebSocket):
     await websocket.accept()
     print("[WS] Client connected")
     sim_task: Optional[asyncio.Task] = None
+    current_pb_speed = [2.0]
 
-    async def run_simulation_stream(sim_dur: float, outage_s: float, outage_e: float):
+    async def run_simulation_stream(
+        sim_dur: float = 525.0,
+        outage_s: float = 120.0,
+        outage_e: float = 170.0,
+        dataset_source: str = "vbox",
+        playback_speed: float = 2.0
+    ):
         try:
+            current_pb_speed[0] = playback_speed
             core.reset()
-            gen = VehicularTrajectoryGenerator(sampling_rate_hz=50.0)
-            sim_data = gen.generate_synthetic_drive(
-                duration_sec=sim_dur,
-                outage_windows=[(outage_s, outage_e)]
-            )
-            step_skip = 2  # send every 2nd sample for smooth 25fps web rendering
-            total_len = len(sim_data["time"])
+            
+            # Select 100% authentic real-world dataset from IO-VNBD benchmark
+            from data.iovnbd_loader import IOVNBDLoader
+            loader = IOVNBDLoader(remove_gravity_from_accel=True)
+
+            is_vbox = (str(dataset_source).lower() in ["vbox", "vehicle", "can"])
+            ref_lat, ref_lon = 52.401719, -1.505333
+            max_dur = 525.0  # 5.0 km medium ride (525 seconds)
+            outage_s = float(outage_s) if outage_s else 120.0
+            outage_e = float(outage_e) if outage_e else 170.0
+
+            if is_vbox:
+                iovnbd_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "iovnbd_samples", "V-S1.csv")
+                dataset_name = "IO-VNBD Racelogic VBOX RTK (5.0 km Ride)"
+            else:
+                iovnbd_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "iovnbd_samples", "S-S1.csv")
+                dataset_name = "IO-VNBD Smartphone Drive (5.0 km Ride)"
+
+            sim_data = loader.load_csv(iovnbd_file, outage_windows=[(outage_s, outage_e)], target_fs=50.0)
+            
+            core.ref_lat = ref_lat
+            core.ref_lon = ref_lon
+            core.transformer = CoordinateTransformer(ref_lat, ref_lon, 110.0)
+            init_speed = float(sim_data["gt_speed"][0])
+            init_yaw = float(sim_data["gt_yaw"][0])
+            core.ekf = IntelligentEKF(0.0, 0.0, init_speed, init_yaw)
+            core.naive_vel = init_speed
+            core.naive_yaw = init_yaw
+
+            # Calculate authentic cumulative ground-truth distance along real road
+            step_dists = np.sqrt(np.diff(sim_data["gt_east"])**2 + np.diff(sim_data["gt_north"])**2)
+            cum_dist_km = np.insert(np.cumsum(step_dists) / 1000.0, 0, 0.0)
+
+            # Notify UI to align map to real road dataset coordinates
+            await websocket.send_json({
+                "event": "simulation_started",
+                "init_lat": ref_lat,
+                "init_lon": ref_lon,
+                "dataset_name": dataset_name,
+                "duration_sec": min(sim_dur, max_dur),
+                "tunnel_window": [outage_s, outage_e],
+                "total_target_km": 5.0
+            })
+
+            # Stream active driving phase (up to 5.0 km)
+            total_len = min(len(sim_data["time"]), int(min(sim_dur, max_dur) * sim_data["fs"]))
+            step_skip = 2
 
             for i in range(0, total_len, step_skip):
+                pb_speed = max(0.5, min(10.0, float(current_pb_speed[0])))
+                sleep_interval = max(0.002, (0.02 * step_skip) / pb_speed)
                 t = float(sim_data["time"][i])
                 imu_p = IMUPacket(
                     timestamp=t,
@@ -442,15 +542,23 @@ async def websocket_telemetry(websocket: WebSocket):
                     sim_data["gt_east"][i], sim_data["gt_north"][i]
                 )
 
-                is_sim_outage = bool(sim_data["in_outage"][i]) if "in_outage" in sim_data else False
+                is_sim_outage = (outage_s <= t <= outage_e)
                 res = core.step(imu_p, gnss_p, simulate_outage=is_sim_outage)
                 res["gt_lat"] = gt_lat
                 res["gt_lon"] = gt_lon
                 res["gt_speed_kmh"] = float(sim_data["gt_speed"][i] * 3.6)
                 res["tunnel_window"] = [outage_s, outage_e]
+                res["cum_dist_km"] = float(cum_dist_km[i])
+                res["target_dist_km"] = 5.0
+
+                # Comparative accuracy metrics (as referenced in hybrid navigation benchmarks)
+                ai_err = math.sqrt((core.ekf.x[0] - sim_data["gt_east"][i])**2 + (core.ekf.x[1] - sim_data["gt_north"][i])**2)
+                naive_err = math.sqrt((core.naive_east - sim_data["gt_east"][i])**2 + (core.naive_north - sim_data["gt_north"][i])**2)
+                res["ai_error_m"] = float(ai_err)
+                res["naive_error_m"] = float(naive_err)
 
                 await websocket.send_json(res)
-                await asyncio.sleep(0.02)  # smooth 50fps pacing
+                await asyncio.sleep(sleep_interval)
         except asyncio.CancelledError:
             pass
         except Exception as err:
@@ -463,10 +571,17 @@ async def websocket_telemetry(websocket: WebSocket):
             if cmd == "start_simulation":
                 if sim_task and not sim_task.done():
                     sim_task.cancel()
-                sim_dur = float(data.get("duration", 150.0))
-                outage_s = float(data.get("outage_start", 45.0))
-                outage_e = float(data.get("outage_end", 95.0))
-                sim_task = asyncio.create_task(run_simulation_stream(sim_dur, outage_s, outage_e))
+                dataset_src = str(data.get("dataset_source", "vbox"))
+                sim_dur = float(data.get("duration", 525.0))
+                outage_s = float(data.get("outage_start", 120.0))
+                outage_e = float(data.get("outage_end", 170.0))
+                playback_spd = float(data.get("playback_speed", 2.0))
+                sim_task = asyncio.create_task(run_simulation_stream(
+                    sim_dur, outage_s, outage_e, dataset_source=dataset_src, playback_speed=playback_spd
+                ))
+
+            elif cmd == "set_playback_speed":
+                current_pb_speed[0] = float(data.get("playback_speed", 2.0))
 
             elif cmd == "toggle_outage":
                 val = bool(data.get("value", not core.force_outage))

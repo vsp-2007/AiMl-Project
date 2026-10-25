@@ -130,6 +130,124 @@ class IntelligentDeadReckoningNet(nn.Module):
 
         return vel_mean, vel_var, yaw_mean, yaw_var
 
+class VelocityNet(nn.Module):
+    """
+    Dedicated Model 1: Forward Velocity Specialist.
+    Processes ONLY 3-axis Accelerations (ax, ay, az).
+    Completely isolated from gyroscopes to prevent rotation/bias cross-talk.
+    """
+    def __init__(self, in_channels: int = 3, conv_channels: int = 32, gru_hidden_size: int = 32, dropout: float = 0.1):
+        super().__init__()
+        self.in_channels = in_channels
+        self.conv1 = TemporalConvBlock(in_channels, conv_channels, kernel_size=5)
+        self.pool1 = nn.MaxPool1d(2)
+        self.conv2 = TemporalConvBlock(conv_channels, conv_channels * 2, kernel_size=3)
+        self.pool2 = nn.MaxPool1d(2)
+
+        self.gru = nn.GRU(
+            input_size=conv_channels * 2,
+            hidden_size=gru_hidden_size,
+            num_layers=1,
+            batch_first=True
+        )
+        self.head = nn.Sequential(
+            nn.Linear(gru_hidden_size, 32),
+            nn.LeakyReLU(0.1),
+            nn.Linear(32, 2)
+        )
+
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        if x.dim() == 2:
+            x = x.unsqueeze(0)
+        if x.shape[-1] == self.in_channels:
+            x = x.transpose(1, 2)
+
+        feat = self.conv1(x)
+        feat = self.pool1(feat)
+        feat = self.conv2(feat)
+        feat = self.pool2(feat).transpose(1, 2)
+
+        out, _ = self.gru(feat)
+        raw = self.head(out[:, -1, :])
+        vel_mean = F.softplus(raw[:, 0])
+        vel_logvar = torch.clamp(raw[:, 1], min=-6.0, max=4.0)
+        vel_var = torch.exp(vel_logvar)
+        return vel_mean, vel_var
+
+
+class YawRateNet(nn.Module):
+    """
+    Dedicated Model 2: Heading & Yaw Rate Specialist.
+    Processes ONLY 3-axis Gyroscopes (gx, gy, gz).
+    Completely isolated from accelerometers so smartphone tilt and road bumps
+    CANNOT induce false turns or phantom circular loops!
+    """
+    def __init__(self, in_channels: int = 3, conv_channels: int = 32, gru_hidden_size: int = 32, dropout: float = 0.1):
+        super().__init__()
+        self.in_channels = in_channels
+        self.conv1 = TemporalConvBlock(in_channels, conv_channels, kernel_size=5)
+        self.pool1 = nn.MaxPool1d(2)
+        self.conv2 = TemporalConvBlock(conv_channels, conv_channels * 2, kernel_size=3)
+        self.pool2 = nn.MaxPool1d(2)
+
+        self.gru = nn.GRU(
+            input_size=conv_channels * 2,
+            hidden_size=gru_hidden_size,
+            num_layers=1,
+            batch_first=True
+        )
+        self.head = nn.Sequential(
+            nn.Linear(gru_hidden_size, 32),
+            nn.LeakyReLU(0.1),
+            nn.Linear(32, 2)
+        )
+
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        if x.dim() == 2:
+            x = x.unsqueeze(0)
+        if x.shape[-1] == self.in_channels:
+            x = x.transpose(1, 2)
+
+        feat = self.conv1(x)
+        feat = self.pool1(feat)
+        feat = self.conv2(feat)
+        feat = self.pool2(feat).transpose(1, 2)
+
+        out, _ = self.gru(feat)
+        raw = self.head(out[:, -1, :])
+        yaw_mean = raw[:, 0]
+        yaw_logvar = torch.clamp(raw[:, 1], min=-8.0, max=2.0)
+        yaw_var = torch.exp(yaw_logvar)
+        return yaw_mean, yaw_var
+
+
+class DecoupledDualModelIDR(nn.Module):
+    """
+    Dual-Model Decoupled Dead Reckoning System.
+    Combines Model 1 (VelocityNet) and Model 2 (YawRateNet) as independent experts.
+    Completely prevents gradient interference and cross-axis false turns.
+    """
+    def __init__(self):
+        super().__init__()
+        self.vel_model = VelocityNet(in_channels=3)
+        self.yaw_model = YawRateNet(in_channels=3)
+
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        if x.dim() == 2:
+            x = x.unsqueeze(0)
+        # Check channel format
+        if x.shape[-1] == 6:
+            accel = x[:, :, 0:3]
+            gyro = x[:, :, 3:6]
+        else:
+            accel = x[:, 0:3, :]
+            gyro = x[:, 3:6, :]
+
+        vel_mean, vel_var = self.vel_model(accel)
+        yaw_mean, yaw_var = self.yaw_model(gyro)
+        return vel_mean, vel_var, yaw_mean, yaw_var
+
+
 class HeteroscedasticLoss(nn.Module):
     """
     Gaussian Negative Log-Likelihood Loss for predicting mean and variance.

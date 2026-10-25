@@ -639,13 +639,13 @@
 
         <!-- Map Layer Selector -->
         <div class="m3-map-layer-selector">
-            <button class="m3-segmented-btn active" onclick="setTileLayer('esri_dark', this)">
+            <button class="m3-segmented-btn active" onclick="setTileLayer('osm_streets', this)">
+                <span class="material-symbols-outlined" style="font-size:16px;">map</span>
+                <span>OpenStreetMap</span>
+            </button>
+            <button class="m3-segmented-btn" onclick="setTileLayer('esri_dark', this)">
                 <span class="material-symbols-outlined" style="font-size:16px;">dark_mode</span>
                 <span>Dark Canvas</span>
-            </button>
-            <button class="m3-segmented-btn" onclick="setTileLayer('osm_streets', this)">
-                <span class="material-symbols-outlined" style="font-size:16px;">map</span>
-                <span>Streets</span>
             </button>
             <button class="m3-segmented-btn" onclick="setTileLayer('esri_sat', this)">
                 <span class="material-symbols-outlined" style="font-size:16px;">satellite_alt</span>
@@ -672,13 +672,61 @@
                         <span class="material-symbols-outlined">navigation</span>
                         <span>Mission Simulation & Controls</span>
                     </span>
-                    <span class="m3-chip" style="font-size:10px; height:24px; padding:0 8px;">IO-VNBD / 50Hz</span>
+                    <span id="datasetBadge" class="m3-chip" style="font-size:10px; height:24px; padding:0 8px;">IO-VNBD VBOX / 50Hz</span>
+                </div>
+
+                <!-- Real-World Dataset Source Switcher -->
+                <div style="margin-bottom: 12px; display: flex; gap: 8px;">
+                    <button id="srcVboxBtn" class="m3-segmented-btn active" style="flex: 1; padding: 6px 8px; font-size: 11px; justify-content: center;" onclick="selectDataset('vbox')">
+                        <span class="material-symbols-outlined" style="font-size:15px;">directions_car</span>
+                        <span>Vehicle VBOX RTK</span>
+                    </button>
+                    <button id="srcPhoneBtn" class="m3-segmented-btn" style="flex: 1; padding: 6px 8px; font-size: 11px; justify-content: center;" onclick="selectDataset('smartphone')">
+                        <span class="material-symbols-outlined" style="font-size:15px;">smartphone</span>
+                        <span>Smartphone IMU</span>
+                    </button>
+                </div>
+
+                <div id="datasetDescCard" style="margin-bottom: 14px; background: var(--md-sys-color-surface-container-high); border: 1px solid var(--md-sys-color-outline-variant); border-radius: 12px; padding: 10px 14px; display: flex; align-items: center; gap: 10px;">
+                    <span id="datasetIcon" class="material-symbols-outlined" style="color: var(--md-sys-color-primary); font-size: 24px;">directions_car</span>
+                    <div>
+                        <div id="datasetTitle" style="font-size: 13px; font-weight: 500; color: var(--md-sys-color-on-surface);">IO-VNBD Vehicle RTK CAN-bus</div>
+                        <div id="datasetSub" style="font-size: 11px; color: var(--md-sys-color-on-surface-variant);">Puma Way to Ring Road • 100% Real VBOX RTK GPS</div>
+                    </div>
+                </div>
+
+                <!-- 5.0 km Medium Ride Progress Card -->
+                <div style="margin-bottom: 12px; background: var(--md-sys-color-surface-container-high); border: 1px solid var(--md-sys-color-outline-variant); border-radius: 12px; padding: 10px 14px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <span style="font-size: 11px; font-weight: 600; color: var(--md-sys-color-on-surface); display: flex; align-items: center; gap: 6px;">
+                            <span class="material-symbols-outlined" style="font-size: 15px; color: var(--md-sys-color-primary);">route</span>
+                            <span>5.0 KM MEDIUM RIDE PROGRESS</span>
+                        </span>
+                        <span id="distOdoText" style="font-size: 12px; font-weight: 700; color: var(--md-sys-color-primary);">0.00 / 5.00 km</span>
+                    </div>
+                    <div style="height: 6px; border-radius: 3px; background: rgba(255,255,255,0.08); overflow: hidden;">
+                        <div id="distProgressBar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #7ccafb, #8cd6ab); transition: width 0.3s ease;"></div>
+                    </div>
+                </div>
+
+                <!-- Simulation Playback Speed Controls -->
+                <div style="margin-bottom: 12px;">
+                    <div style="font-size: 11px; font-weight: 500; color: var(--md-sys-color-on-surface-variant); margin-bottom: 6px; display: flex; justify-content: space-between;">
+                        <span>SIMULATION PLAYBACK SPEED:</span>
+                        <span id="pbSpeedLabel" style="font-weight: 600; color: var(--md-sys-color-primary);">2x Speed</span>
+                    </div>
+                    <div id="pbSpeedButtons" style="display: flex; gap: 6px;">
+                        <button class="m3-segmented-btn" style="flex: 1; padding: 4px 6px; font-size: 11px; justify-content: center;" onclick="setPlaybackSpeed(1, this)">1x</button>
+                        <button class="m3-segmented-btn active" style="flex: 1; padding: 4px 6px; font-size: 11px; justify-content: center;" onclick="setPlaybackSpeed(2, this)">2x</button>
+                        <button class="m3-segmented-btn" style="flex: 1; padding: 4px 6px; font-size: 11px; justify-content: center;" onclick="setPlaybackSpeed(4, this)">4x</button>
+                        <button class="m3-segmented-btn" style="flex: 1; padding: 4px 6px; font-size: 11px; justify-content: center;" onclick="setPlaybackSpeed(8, this)">8x</button>
+                    </div>
                 </div>
 
                 <div class="m3-btn-row">
                     <button class="m3-btn-filled" onclick="startSimulation()">
                         <span class="material-symbols-outlined">play_arrow</span>
-                        <span>Start 150s Drive Mission</span>
+                        <span>Start 5 km Ride Mission</span>
                     </button>
                     <button class="m3-btn-tonal" onclick="resetSim()">
                         <span class="material-symbols-outlined">restart_alt</span>
@@ -753,6 +801,28 @@
                         <div class="m3-metric-val m3-metric-highlight-ai">
                             <span id="valAIYawRate">0.00</span>
                             <span class="m3-metric-unit">°/s</span>
+                        </div>
+                    </div>
+
+                    <div class="m3-metric-box">
+                        <span class="m3-metric-label">
+                            <span class="material-symbols-outlined" style="font-size:14px; color:var(--md-sys-color-primary);">verified</span>
+                            <span>AI-ML DR ERROR</span>
+                        </span>
+                        <div class="m3-metric-val" style="color:var(--md-sys-color-primary);">
+                            <span id="valAiError">0.00</span>
+                            <span class="m3-metric-unit">m</span>
+                        </div>
+                    </div>
+
+                    <div class="m3-metric-box">
+                        <span class="m3-metric-label">
+                            <span class="material-symbols-outlined" style="font-size:14px; color:var(--md-sys-color-error);">error_outline</span>
+                            <span>NAIVE IMU ERROR</span>
+                        </span>
+                        <div class="m3-metric-val" style="color:var(--md-sys-color-error);">
+                            <span id="valNaiveError">0.0</span>
+                            <span class="m3-metric-unit">m</span>
                         </div>
                     </div>
                 </div>
@@ -845,56 +915,101 @@
 
     <!-- Application Script -->
     <script>
-        // Leaflet Map Initialization (Bangalore ISRO reference coordinates)
-        const initLat = 12.9716;
-        const initLon = 77.5946;
-        const map = L.map('map', { zoomControl: false }).setView([initLat, initLon], 16);
+        // Leaflet Map Initialization (Coventry UK - Authentic IO-VNBD Origin)
+        let initLat = 52.401719;
+        let initLon = -1.505333;
+        let currentDataset = 'vbox';
+        const map = L.map('map', { zoomControl: false }).setView([initLat, initLon], 17);
         L.control.zoom({ position: 'bottomright' }).addTo(map);
 
         // Tile layer definitions (clean, authentic, NO API KEY required!)
         const tileProviders = {
-            esri_dark: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
-                maxZoom: 19,
-                attribution: '&copy; Esri, HERE, Garmin'
-            }),
             osm_streets: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 19,
                 attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
             }),
+            esri_dark: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+                maxZoom: 16,
+                attribution: '&copy; Esri, HERE, Garmin'
+            }),
             esri_sat: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-                maxZoom: 19,
+                maxZoom: 18,
                 attribution: '&copy; Esri, Maxar, Earthstar Geographics'
             })
         };
 
-        let currentTile = tileProviders.esri_dark.addTo(map);
+        let currentTile = tileProviders.osm_streets.addTo(map);
 
         function setTileLayer(providerKey, btnElement) {
             map.removeLayer(currentTile);
             currentTile = tileProviders[providerKey].addTo(map);
-            document.querySelectorAll('.m3-segmented-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.m3-map-layer-selector .m3-segmented-btn').forEach(btn => btn.classList.remove('active'));
             btnElement.classList.add('active');
         }
 
-        // Trajectory Polyline Overlays
+        function selectDataset(source) {
+            currentDataset = source;
+            const btnVbox = document.getElementById('srcVboxBtn');
+            const btnPhone = document.getElementById('srcPhoneBtn');
+            const title = document.getElementById('datasetTitle');
+            const sub = document.getElementById('datasetSub');
+            const icon = document.getElementById('datasetIcon');
+            const badge = document.getElementById('datasetBadge');
+
+            if (source === 'vbox') {
+                btnVbox.classList.add('active');
+                btnPhone.classList.remove('active');
+                title.innerText = 'IO-VNBD Vehicle RTK CAN-bus';
+                sub.innerText = 'Puma Way to Ring Road • 100% Real VBOX RTK GPS';
+                icon.innerText = 'directions_car';
+                badge.innerText = 'IO-VNBD VBOX / 50Hz';
+                initLat = 52.401719;
+                initLon = -1.505333;
+                map.setView([initLat, initLon], 17);
+                vehicleMarker.setLatLng([initLat, initLon]);
+            } else {
+                btnPhone.classList.add('active');
+                btnVbox.classList.remove('active');
+                title.innerText = 'IO-VNBD Smartphone Drive';
+                sub.innerText = 'Puma Way to Ring Road • 100% Real Android IMU + GPS';
+                icon.innerText = 'smartphone';
+                badge.innerText = 'IO-VNBD Phone / 50Hz';
+                initLat = 52.401719;
+                initLon = -1.505333;
+                map.setView([initLat, initLon], 17);
+                vehicleMarker.setLatLng([initLat, initLon]);
+            }
+            resetSim();
+        }
+
+        // Trajectory Polyline Overlays with Anti-Aliased Curved Stroke
         const gtPoly = L.polyline([], {
             color: '#7ccafb',
             weight: 4,
-            opacity: 0.8,
-            dashArray: '8, 6'
+            opacity: 0.85,
+            dashArray: '8, 6',
+            lineJoin: 'round',
+            lineCap: 'round',
+            smoothFactor: 0.8
         }).addTo(map);
 
         const aiPoly = L.polyline([], {
             color: '#8cd6ab',
             weight: 5,
-            opacity: 0.95
+            opacity: 0.95,
+            lineJoin: 'round',
+            lineCap: 'round',
+            smoothFactor: 0.8
         }).addTo(map);
 
         const naivePoly = L.polyline([], {
             color: '#ffb4ab',
             weight: 3,
-            opacity: 0.6,
-            dashArray: '4, 4'
+            opacity: 0.65,
+            dashArray: '5, 5',
+            lineJoin: 'round',
+            lineCap: 'round',
+            smoothFactor: 0.8
         }).addTo(map);
 
         // M3 Vehicle Marker with Radar Pulse and Heading Arrow
@@ -922,10 +1037,25 @@
         // State tracking for smooth non-jittery rendering
         let ws = null;
         let outageManual = false;
+        let currentPlaybackSpeed = 2;
         let lastPanTime = 0;
         let lastAiRef = { pt: null };
         let lastNaiveRef = { pt: null };
         let lastGtRef = { pt: null };
+
+        function setPlaybackSpeed(spd, btnEl) {
+            currentPlaybackSpeed = Number(spd);
+            document.querySelectorAll('#pbSpeedButtons .m3-segmented-btn').forEach(btn => btn.classList.remove('active'));
+            if (btnEl) btnEl.classList.add('active');
+            const lbl = document.getElementById('pbSpeedLabel');
+            if (lbl) lbl.innerText = spd + 'x Speed';
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    command: 'set_playback_speed',
+                    playback_speed: currentPlaybackSpeed
+                }));
+            }
+        }
 
         function addPointSmooth(poly, lat, lon, refObj) {
             if (!refObj.pt) {
@@ -935,8 +1065,8 @@
             }
             const dLat = lat - refObj.pt[0];
             const dLon = lon - refObj.pt[1];
-            // Filter sub-meter micro jitters
-            if (dLat * dLat + dLon * dLon > 3e-11) {
+            // Dense 0.4-meter threshold for buttery-smooth curved road rendering
+            if (dLat * dLat + dLon * dLon > 1.5e-11) {
                 poly.addLatLng([lat, lon]);
                 refObj.pt = [lat, lon];
             }
@@ -945,10 +1075,10 @@
         function updateMapViewportSmooth(lat, lon) {
             const now = performance.now();
             const bounds = map.getBounds();
-            // Only re-center when approaching viewport margin or every 1.4s
-            const isNearEdge = !bounds.pad(-0.25).contains([lat, lon]);
-            if (isNearEdge || (now - lastPanTime > 1400)) {
-                map.panTo([lat, lon], { animate: true, duration: 0.7, easeLinearity: 0.25 });
+            // Re-center smoothly when approaching viewport edge (every 1.8s)
+            const isNearEdge = !bounds || !bounds.pad(-0.25).contains([lat, lon]);
+            if (isNearEdge && (now - lastPanTime > 1800)) {
+                map.panTo([lat, lon], { animate: true, duration: 0.6, easeLinearity: 0.25 });
                 lastPanTime = now;
             }
         }
@@ -964,6 +1094,11 @@
 
             ws.onmessage = (event) => {
                 const data = JSON.parse(event.data);
+                if (data.event === 'simulation_started') {
+                    map.setView([data.init_lat, data.init_lon], 17);
+                    vehicleMarker.setLatLng([data.init_lat, data.init_lon]);
+                    return;
+                }
                 handleTelemetry(data);
             };
 
@@ -1052,6 +1187,29 @@
             }
 
             document.getElementById('valUncert').innerText = (data.pos_uncertainty_m || 0).toFixed(2);
+
+            // 5.0 km Ride Odometer & Progress Bar
+            if (data.cum_dist_km !== undefined) {
+                const curDist = data.cum_dist_km || 0.0;
+                const tgtDist = data.target_dist_km || 5.0;
+                const odoEl = document.getElementById('distOdoText');
+                const barEl = document.getElementById('distProgressBar');
+                if (odoEl) odoEl.innerText = `${curDist.toFixed(2)} / ${tgtDist.toFixed(2)} km`;
+                if (barEl) {
+                    const pct = Math.min(100, Math.max(0, (curDist / tgtDist) * 100));
+                    barEl.style.width = pct.toFixed(1) + '%';
+                }
+            }
+
+            // Side-by-side Comparative Errors (AI-ML DR vs Naive IMU)
+            if (data.ai_error_m !== undefined) {
+                const aiErrEl = document.getElementById('valAiError');
+                if (aiErrEl) aiErrEl.innerText = data.ai_error_m.toFixed(2);
+            }
+            if (data.naive_error_m !== undefined) {
+                const naiveErrEl = document.getElementById('valNaiveError');
+                if (naiveErrEl) naiveErrEl.innerText = data.naive_error_m.toFixed(1);
+            }
         }
 
         function startSimulation() {
@@ -1065,6 +1223,16 @@
                 lastPanTime = 0;
                 outageManual = false;
 
+                const odoEl = document.getElementById('distOdoText');
+                const barEl = document.getElementById('distProgressBar');
+                if (odoEl) odoEl.innerText = '0.00 / 5.00 km';
+                if (barEl) barEl.style.width = '0%';
+
+                const aiErrEl = document.getElementById('valAiError');
+                if (aiErrEl) aiErrEl.innerText = '0.00';
+                const naiveErrEl = document.getElementById('valNaiveError');
+                if (naiveErrEl) naiveErrEl.innerText = '0.0';
+
                 document.getElementById('outageSwitch').classList.remove('m3-switch-active');
                 document.getElementById('statusBadge').className = 'm3-status-badge m3-status-active';
                 document.getElementById('statusText').innerText = 'GNSS ACTIVE (WGS84 3D FIX)';
@@ -1072,9 +1240,11 @@
 
                 ws.send(JSON.stringify({
                     command: 'start_simulation',
-                    duration: 120.0,
-                    outage_start: 24.0,   // Normal GPS driving for first 24s
-                    outage_end: 45.0      // Tunnel underpass outage between 24s and 45s
+                    dataset_source: currentDataset,
+                    duration: 525.0,
+                    outage_start: 120.0,
+                    outage_end: 170.0,
+                    playback_speed: currentPlaybackSpeed
                 }));
             }
         }
@@ -1107,6 +1277,17 @@
             document.getElementById('statusBadge').className = 'm3-status-badge m3-status-active';
             document.getElementById('statusText').innerText = 'GNSS ACTIVE (WGS84 3D FIX)';
             document.getElementById('tunnelAlert').style.display = 'none';
+
+            const odoEl = document.getElementById('distOdoText');
+            const barEl = document.getElementById('distProgressBar');
+            if (odoEl) odoEl.innerText = '0.00 / 5.00 km';
+            if (barEl) barEl.style.width = '0%';
+
+            const aiErrEl = document.getElementById('valAiError');
+            if (aiErrEl) aiErrEl.innerText = '0.00';
+            const naiveErrEl = document.getElementById('valNaiveError');
+            if (naiveErrEl) naiveErrEl.innerText = '0.0';
+
             const confEl = document.getElementById('adaptConf');
             const progEl = document.getElementById('adaptProgressBar');
             if (confEl) confEl.innerText = '0.0%';

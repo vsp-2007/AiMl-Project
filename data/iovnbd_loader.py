@@ -211,9 +211,9 @@ class IOVNBDLoader:
         """
         norm_headers = {_normalize_header(h) for h in headers}
 
-        if "indicatedlongitudinalacceleration" in norm_headers or "wheelspeedfrontleft" in norm_headers or "timesincestartofday" in norm_headers:
+        if any("indicatedlongitudinalacceleration" in h or "wheelspeed" in h or "timesincestartofday" in h or "velocitykmhr" in h for h in norm_headers):
             return "vehicle"
-        elif "accelerometerx" in norm_headers or "gyroscopeyaw" in norm_headers or "timesincestart" in norm_headers:
+        elif any("accelerometerx" in h or "gyroscopeyaw" in h or "timesincestart" in h or "gpslatitude" in h for h in norm_headers):
             return "smartphone"
         elif "ax" in norm_headers and "gz" in norm_headers:
             return "canonical"
@@ -380,13 +380,24 @@ class IOVNBDLoader:
         """
         Extracts signals from official Vehicle CAN / Racelogic VBOX format.
         """
+        def _get_col(candidates: List[str], fallback=None):
+            for k in candidates:
+                if k in data:
+                    return data[k]
+            for cand in candidates:
+                for k in data.keys():
+                    if k.startswith(cand):
+                        return data[k]
+            return fallback
+
         # 1. Time vector
-        if "timesincestartofday" in data:
-            t = data["timesincestartofday"]
-            t = t - t[0]  # Normalize time to start at 0
-        elif "sampleperiod" in data:
-            dt_step = float(data["sampleperiod"][0]) if len(data["sampleperiod"]) > 0 else 0.1
-            t = np.arange(len(next(iter(data.values())))) * dt_step
+        t_col = _get_col(["timesincestartofday", "sampleperiod"])
+        if t_col is not None and len(t_col) > 0:
+            if "sampleperiod" in next(iter(data.keys())):
+                dt_step = float(t_col[0]) if len(t_col) > 0 else 0.1
+                t = np.arange(len(next(iter(data.values())))) * dt_step
+            else:
+                t = t_col - t_col[0]
         else:
             t = np.arange(len(next(iter(data.values())))) * (1.0 / self.default_fs)
 
@@ -396,41 +407,34 @@ class IOVNBDLoader:
             dt = 1.0 / self.default_fs
         fs = 1.0 / dt
 
-        # 2. Forward & Lateral Accelerations (Indicated in 'g' units -> convert to m/s^2)
-        if "indicatedlongitudinalacceleration" in data:
-            ax = (data["indicatedlongitudinalacceleration"] * STANDARD_GRAVITY_G).astype(np.float32)
-        else:
-            ax = np.zeros(n_samples, dtype=np.float32)
+        # 2. Forward & Lateral Accelerations
+        ax_col = _get_col(["indicatedlongitudinalacceleration", "ax"])
+        ax = (ax_col * STANDARD_GRAVITY_G).astype(np.float32) if ax_col is not None else np.zeros(n_samples, dtype=np.float32)
 
-        if "indicatedlateralacceleration" in data:
-            ay = (data["indicatedlateralacceleration"] * STANDARD_GRAVITY_G).astype(np.float32)
-        else:
-            ay = np.zeros(n_samples, dtype=np.float32)
+        ay_col = _get_col(["indicatedlateralacceleration", "ay"])
+        ay = (ay_col * STANDARD_GRAVITY_G).astype(np.float32) if ay_col is not None else np.zeros(n_samples, dtype=np.float32)
 
         az = np.full(n_samples, STANDARD_GRAVITY_G, dtype=np.float32)
 
-        # 3. Angular Velocities: Yaw Rate in deg/s -> convert to rad/s (ISO 8855 left-turn positive)
-        if "yawrate" in data:
-            gz = np.radians(data["yawrate"]).astype(np.float32)
-        else:
-            gz = np.zeros(n_samples, dtype=np.float32)
+        # 3. Angular Velocities: Yaw Rate in deg/s -> rad/s
+        gz_col = _get_col(["yawrate", "gyroz", "gz"])
+        gz = np.radians(gz_col).astype(np.float32) if gz_col is not None else np.zeros(n_samples, dtype=np.float32)
 
         gx = np.zeros(n_samples, dtype=np.float32)
         gy = np.zeros(n_samples, dtype=np.float32)
 
-        # 4. Wheel odometry calculation (Wheel speeds in rad/sec)
+        # 4. Wheel odometry
         wheel_speed = np.zeros(n_samples, dtype=np.float32)
         ws_keys = ["wheelspeedfrontleft", "wheelspeedfrontright", "wheelspeedrearleft", "wheelspeedrearright"]
-        present_ws = [k for k in ws_keys if k in data]
+        present_ws = [_get_col([k]) for k in ws_keys if _get_col([k]) is not None]
         if present_ws:
-            avg_wheel_rads = np.mean([data[k] for k in present_ws], axis=0)
+            avg_wheel_rads = np.mean(present_ws, axis=0)
             wheel_speed = (avg_wheel_rads * self.wheel_radius_m).astype(np.float32)
 
-        # 5. Speed (Ground truth velocity in km/h -> m/s)
-        if "velocity" in data:
-            gt_speed = (data["velocity"] / 3.6).astype(np.float32)
-        elif "indicatedvehiclespeed" in data:
-            gt_speed = (data["indicatedvehiclespeed"] / 3.6).astype(np.float32)
+        # 5. Speed (Ground truth velocity km/h -> m/s)
+        spd_col = _get_col(["velocity", "indicatedvehiclespeed", "speed"])
+        if spd_col is not None:
+            gt_speed = (spd_col / 3.6).astype(np.float32)
         elif present_ws:
             gt_speed = wheel_speed
         else:
@@ -438,38 +442,40 @@ class IOVNBDLoader:
 
         gt_speed = np.clip(gt_speed, 0.0, None)
 
-        # 6. Initial heading estimate from compass bearing or integrated gyro
-        if "heading" in data:
-            raw_heading_deg = data["heading"]
+        # 6. Heading
+        hdg_col = _get_col(["heading", "gpsorientation"])
+        if hdg_col is not None:
+            raw_heading_deg = hdg_col
             temp_yaw = compass_bearing_to_enu_yaw(raw_heading_deg).astype(np.float32)
         else:
             raw_heading_deg = None
             temp_yaw = (np.cumsum(gz * dt) + np.pi) % (2.0 * np.pi) - np.pi
             temp_yaw = temp_yaw.astype(np.float32)
 
-        # 7. Coordinates & Positions (Latitude, Longitude, Height)
-        # Robustly detects valid GPS fixes and avoids Null Island (0,0) spikes on dropouts
-        has_coords = "latitude" in data and "longitude" in data
-        sat_col = data.get("noofgpssatellitesavailable", np.full(n_samples, 8.0))
+        # 7. Coordinates & Positions
+        lat = _get_col(["latitude", "gpslatitude", "lat"])
+        lon = _get_col(["longitude", "gpslongitude", "lon"])
+        alt = _get_col(["height", "gpsaltitude", "alt"], np.zeros(n_samples))
+        has_coords = (lat is not None) and (lon is not None)
+        sat_col = _get_col(["noofgpssatellitesavailable", "satellites"], np.full(n_samples, 8.0))
 
         gt_east = np.zeros(n_samples, dtype=np.float64)
         gt_north = np.zeros(n_samples, dtype=np.float64)
         valid_gps = np.zeros(n_samples, dtype=bool)
 
         if has_coords:
-            lat = data["latitude"]
-            lon = data["longitude"]
-            alt = data.get("height", np.zeros(n_samples))
             if np.nanmean(np.abs(alt)) < 15.0:
                 alt = alt * 1000.0  # km to meters
 
-            # Valid GPS fix criteria: non-zero, finite, and >= 4 satellites
+            # Valid GPS fix criteria: non-zero, finite, and >= 4 satellites (if satellites reported)
+            has_sat_reporting = (sat_col is not None and np.nanmax(sat_col) >= 4.0)
+            sat_mask = (sat_col >= 4.0) if has_sat_reporting else np.ones(n_samples, dtype=bool)
             valid_gps = (
                 (np.abs(lat) > 0.01) &
                 (np.abs(lon) > 0.01) &
                 np.isfinite(lat) &
                 np.isfinite(lon) &
-                (sat_col >= 4.0)
+                sat_mask
             )
 
         if np.any(valid_gps):
@@ -552,9 +558,20 @@ class IOVNBDLoader:
         """
         Extracts signals from official Smartphone AndroSensor format.
         """
+        def _get_col(candidates: List[str], fallback=None):
+            for k in candidates:
+                if k in data:
+                    return data[k]
+            for cand in candidates:
+                for k in data.keys():
+                    if k.startswith(cand):
+                        return data[k]
+            return fallback
+
         # Time vector in ms -> seconds
-        if "timesincestart" in data:
-            t = (data["timesincestart"] - data["timesincestart"][0]) / 1000.0
+        t_col = _get_col(["timesincestart", "timesincestartms", "time"])
+        if t_col is not None:
+            t = (t_col - t_col[0]) / 1000.0 if t_col[0] > 1000.0 or t_col[-1] > 1000.0 else (t_col - t_col[0])
         else:
             t = np.arange(len(next(iter(data.values())))) * (1.0 / self.default_fs)
 
@@ -565,33 +582,35 @@ class IOVNBDLoader:
         fs = 1.0 / dt
 
         # Accelerations in m/s^2
-        ax = data.get("accelerometerx", np.zeros(n_samples)).astype(np.float32)
-        ay = data.get("accelerometery", np.zeros(n_samples)).astype(np.float32)
-        az = data.get("accelerometerz", np.full(n_samples, STANDARD_GRAVITY_G)).astype(np.float32)
+        ax = _get_col(["accelerometerx", "accelerometerxms", "ax"], np.zeros(n_samples)).astype(np.float32)
+        ay = _get_col(["accelerometery", "accelerometeryms", "ay"], np.zeros(n_samples)).astype(np.float32)
+        az = _get_col(["accelerometerz", "accelerometerzms", "az"], np.full(n_samples, STANDARD_GRAVITY_G)).astype(np.float32)
 
         # Optionally subtract gravity if gravity vectors are present
-        if self.remove_gravity and "gravityx" in data and "gravityy" in data and "gravityz" in data:
-            ax = ax - data["gravityx"].astype(np.float32)
-            ay = ay - data["gravityy"].astype(np.float32)
-            az = az - data["gravityz"].astype(np.float32)
+        gx_col = _get_col(["gravityx", "gravityxms"])
+        gy_col = _get_col(["gravityy", "gravityyms"])
+        gz_col = _get_col(["gravityz", "gravityzms"])
+        if self.remove_gravity and gx_col is not None and gy_col is not None and gz_col is not None:
+            ax = ax - gx_col.astype(np.float32)
+            ay = ay - gy_col.astype(np.float32)
+            az = az - gz_col.astype(np.float32)
 
         # Gyroscopes (rad/s)
-        gz = data.get("gyroscopeyaw", data.get("gyroscopez", np.zeros(n_samples))).astype(np.float32)
-        gy = data.get("gyroscopepitch", data.get("gyroscopey", np.zeros(n_samples))).astype(np.float32)
-        gx = data.get("gyroscoperoll", data.get("gyroscopex", np.zeros(n_samples))).astype(np.float32)
+        gz = _get_col(["gyroscopeyaw", "gyroscopeyawrads", "gyroscopez", "gz"], np.zeros(n_samples)).astype(np.float32)
+        gy = _get_col(["gyroscopepitch", "gyroscopepitchrads", "gyroscopey", "gy"], np.zeros(n_samples)).astype(np.float32)
+        gx = _get_col(["gyroscoperoll", "gyroscoperollrads", "gyroscopex", "gx"], np.zeros(n_samples)).astype(np.float32)
 
         # Ground truth speed from GPS (km/h -> m/s)
-        if "gpsspeed" in data:
-            gt_speed = np.clip(data["gpsspeed"] / 3.6, 0.0, None).astype(np.float32)
+        spd_col = _get_col(["gpsspeed", "gpsspeedkmh", "speed"])
+        if spd_col is not None:
+            gt_speed = np.clip(spd_col / 3.6, 0.0, None).astype(np.float32)
         else:
             gt_speed = np.zeros(n_samples, dtype=np.float32)
 
         # Heading degrees from GPS orientation or Android orientation yaw
-        if "gpsorientation" in data:
-            raw_heading_deg = data["gpsorientation"]
-            temp_yaw = compass_bearing_to_enu_yaw(raw_heading_deg).astype(np.float32)
-        elif "orientationyaw" in data:
-            raw_heading_deg = data["orientationyaw"]
+        heading_col = _get_col(["gpsorientation", "orientationyaw", "heading"])
+        if heading_col is not None:
+            raw_heading_deg = heading_col
             temp_yaw = compass_bearing_to_enu_yaw(raw_heading_deg).astype(np.float32)
         else:
             raw_heading_deg = None
@@ -599,24 +618,25 @@ class IOVNBDLoader:
             temp_yaw = temp_yaw.astype(np.float32)
 
         # Coordinates
-        has_gps = "gpslatitude" in data and "gpslongitude" in data
-        sat_col = data.get("gpssatellitesinrange", np.full(n_samples, 6.0))
+        lat = _get_col(["gpslatitude", "gpslatitudedegrees", "lat", "latitude"])
+        lon = _get_col(["gpslongitude", "gpslongitudedegrees", "lon", "longitude"])
+        alt = _get_col(["gpsaltitude", "gpsaltitudem", "alt", "altitude"], np.zeros(n_samples))
+        has_gps = (lat is not None) and (lon is not None)
+        sat_col = _get_col(["gpssatellitesinrange", "satellites"])
+        has_sat_reporting = (sat_col is not None and np.nanmax(sat_col) >= 4.0)
+        sat_mask = (sat_col >= 4.0) if has_sat_reporting else np.ones(n_samples, dtype=bool)
 
         gt_east = np.zeros(n_samples, dtype=np.float64)
         gt_north = np.zeros(n_samples, dtype=np.float64)
         valid_gps = np.zeros(n_samples, dtype=bool)
 
         if has_gps:
-            lat = data["gpslatitude"]
-            lon = data["gpslongitude"]
-            alt = data.get("gpsaltitude", np.zeros(n_samples))
-
             valid_gps = (
                 (np.abs(lat) > 0.01) &
                 (np.abs(lon) > 0.01) &
                 np.isfinite(lat) &
                 np.isfinite(lon) &
-                (sat_col >= 4.0)
+                sat_mask
             )
 
         if np.any(valid_gps):

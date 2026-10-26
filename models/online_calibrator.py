@@ -70,12 +70,12 @@ class OnlineDriftCalibrator:
         if is_stationary:
             self.zupt_counter += 1
             # When stationary, true velocity = 0 and true yaw rate = 0
-            # Directly calibrate biases
+            # Directly calibrate biases with strict bounding against noise
             v_err = 0.0 - (self.scale_v * predicted_vel + self.bias_v)
             self.bias_v += 0.05 * v_err
 
             yaw_err = 0.0 - (self.scale_yaw * predicted_yaw_rate + self.bias_yaw)
-            self.bias_yaw += 0.05 * yaw_err
+            self.bias_yaw = float(np.clip(self.bias_yaw + 0.01 * yaw_err, -0.002, 0.002))
             
             return {
                 "adapted": True,
@@ -116,7 +116,7 @@ class OnlineDriftCalibrator:
             # Heavy regularization anchoring bias to zero to reject noise
             grad_bias_yaw = -err_yaw + 0.1 * self.bias_yaw
             self.bias_yaw -= 0.001 * weight * np.clip(grad_bias_yaw, -0.05, 0.05)
-            self.bias_yaw = float(np.clip(self.bias_yaw, -0.008, 0.008))
+            self.bias_yaw = float(np.clip(self.bias_yaw, -0.002, 0.002))
             self.scale_yaw = 1.0  # Keep scale factor locked at 1.0 to avoid turn distortion
 
         # Update diagnostics

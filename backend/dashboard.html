@@ -1174,11 +1174,10 @@
                 document.getElementById('valScaleV').innerText = scaleV.toFixed(3);
                 document.getElementById('valSamples').innerText = samples;
 
-                // Dynamically calculate and animate profile adaptation confidence
-                let conf = 0.0;
-                if (samples > 0) {
-                    // Smooth saturation curve approaching 99.4% as samples increase
-                    conf = Math.min(99.4, 25.0 + (samples / 120.0) * 72.0);
+                // Dynamically calculate confidence from authentic AI error (decays if AI deviates from ground truth)
+                let conf = 99.4;
+                if (data.ai_error_m !== undefined) {
+                    conf = Math.max(5.0, Math.min(99.4, 100.0 * Math.exp(-data.ai_error_m / 8.0)));
                 }
                 const confEl = document.getElementById('adaptConf');
                 const progEl = document.getElementById('adaptProgressBar');

@@ -71,6 +71,7 @@ class NavigationCore:
 
         # Outage simulation flag
         self.force_outage = False
+        self.manual_outage_override: Optional[bool] = None
         self.last_imu_timestamp: Optional[float] = None
         self.last_gnss_bearing: Optional[float] = None
         self.last_gnss_timestamp: Optional[float] = None
@@ -97,6 +98,7 @@ class NavigationCore:
         self.stop_pitch_bias = 0.0
         self.imu_buffer.clear()
         self.force_outage = False
+        self.manual_outage_override = None
         self.last_imu_timestamp = None
         self.last_gnss_bearing = None
         self.last_gnss_timestamp = None
@@ -246,16 +248,20 @@ class NavigationCore:
 
         # Determine whether GNSS outage is active
         # An outage occurs if:
-        # 1. simulate_outage is True (e.g. tunnel window in simulation), OR
-        # 2. self.force_outage is True (manual switch toggle), OR
-        # 3. GPS was active but hasn't arrived for > 1.8s
+        # 1. manual_outage_override is explicitly set (takes highest precedence), OR
+        # 2. simulate_outage is True (e.g. tunnel window in simulation), OR
+        # 3. self.force_outage is True (manual switch toggle), OR
+        # 4. GPS was active but hasn't arrived for > 1.8s
         time_since_gnss = (imu.timestamp - self.last_gnss_timestamp) if self.last_gnss_timestamp is not None else 0.0
         gps_timed_out = (self.last_gnss_timestamp is not None and time_since_gnss > 1.8)
         
-        is_outage = simulate_outage or self.force_outage or gps_timed_out
+        if self.manual_outage_override is not None:
+            is_outage = self.manual_outage_override
+        else:
+            is_outage = simulate_outage or self.force_outage or gps_timed_out
 
         calib_stats = {}
-        if gnss is not None and not (simulate_outage or self.force_outage):
+        if gnss is not None and not is_outage:
             # Active GNSS Mode: Transform GPS Lat/Lon to Local ENU
             is_outage = False
             gps_e, gps_n, _ = self.transformer.geodetic_to_enu(
@@ -478,7 +484,7 @@ async def websocket_telemetry(websocket: WebSocket):
                 iovnbd_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "iovnbd_samples", "S-S1.csv")
                 dataset_name = "IO-VNBD Smartphone Drive (5.0 km Ride)"
 
-            sim_data = loader.load_csv(iovnbd_file, outage_windows=[(outage_s, outage_e)], target_fs=50.0)
+            sim_data = loader.load_csv(iovnbd_file, outage_windows=None, target_fs=50.0)
             
             core.reset()
             core.ref_lat = ref_lat
@@ -587,8 +593,11 @@ async def websocket_telemetry(websocket: WebSocket):
                     gyro_z=float(sim_gz[s_i])
                 )
 
+                is_sim_outage = (outage_s <= t <= outage_e)
+                active_outage = core.manual_outage_override if core.manual_outage_override is not None else (is_sim_outage or core.force_outage)
+
                 gnss_p = None
-                if sim_data["gps_mask"][i]:
+                if (not active_outage) and sim_data["gps_mask"][i]:
                     g_lat, g_lon, _ = core.transformer.enu_to_geodetic(
                         sim_data["gps_east"][i], sim_data["gps_north"][i]
                     )
@@ -605,7 +614,6 @@ async def websocket_telemetry(websocket: WebSocket):
                     sim_data["gt_east"][i], sim_data["gt_north"][i]
                 )
 
-                is_sim_outage = (outage_s <= t <= outage_e)
                 res = core.step(imu_p, gnss_p, simulate_outage=is_sim_outage)
                 res["gt_lat"] = gt_lat
                 res["gt_lon"] = gt_lon
@@ -647,9 +655,10 @@ async def websocket_telemetry(websocket: WebSocket):
                 current_pb_speed[0] = float(data.get("playback_speed", 2.0))
 
             elif cmd == "toggle_outage":
-                val = bool(data.get("value", not core.force_outage))
+                val = bool(data.get("value"))
+                core.manual_outage_override = val
                 core.force_outage = val
-                await websocket.send_json({"event": "outage_toggled", "force_outage": core.force_outage})
+                await websocket.send_json({"event": "outage_toggled", "force_outage": val})
 
             elif cmd == "reset":
                 if sim_task and not sim_task.done():

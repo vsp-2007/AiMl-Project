@@ -1149,9 +1149,7 @@
                 badge.className = 'm3-status-badge m3-status-active';
                 statusText.innerText = 'GNSS ACTIVE (WGS84 3D FIX)';
                 alertBox.style.display = 'none';
-                if (!outageManual) {
-                    switchEl.classList.remove('m3-switch-active');
-                }
+                switchEl.classList.remove('m3-switch-active');
             }
 
             // Update Vehicle Kinematics
@@ -1249,9 +1247,11 @@
         }
 
         function toggleOutage() {
-            outageManual = !outageManual;
             const switchEl = document.getElementById('outageSwitch');
-            if (outageManual) {
+            const isCurrentlyActive = switchEl.classList.contains('m3-switch-active');
+            const targetState = !isCurrentlyActive;
+            outageManual = targetState;
+            if (targetState) {
                 switchEl.classList.add('m3-switch-active');
             } else {
                 switchEl.classList.remove('m3-switch-active');
@@ -1259,7 +1259,7 @@
             if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({
                     command: 'toggle_outage',
-                    value: outageManual
+                    value: targetState
                 }));
             }
         }

@@ -1,0 +1,37 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Pytest / testing cache
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environments & Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# IDE / Editor configuration
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Project Reports, Docx, and Documentation build scripts
+*.docx
+*.pdf
+AIML_Project_Report_SECE.docx
+FINAL_AIML_PROJECT_REPORT.docx
+FINAL_PROJECT_REPORT_FOR_SUBMISSION.md
+PROJECT_REPORT_SECE.md
+VIVA_QUESTIONS_ANSWERS.md
+build_exact_docx.py
+build_final_submission_report.py
+generate_report.py

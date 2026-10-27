@@ -15,9 +15,7 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <style>
-        /* ========================================================
-           Android Material Design 3 (Material You) Theme Tokens
-           ======================================================== */
+      
         :root {
             --md-sys-color-background: #0f141a;
             --md-sys-color-on-background: #e1e2e8;
@@ -90,9 +88,7 @@
             display: inline-block;
         }
 
-        /* ========================================================
-           M3 Top App Bar
-           ======================================================== */
+       
         .m3-top-app-bar {
             background-color: var(--md-sys-color-surface-container-low);
             padding: 10px 20px;
@@ -1083,13 +1079,22 @@
             }
         }
 
+        let pendingStart = false;
+
         function connectWS() {
+            if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+                return;
+            }
             const loc = window.location;
             const wsUri = (loc.protocol === 'https:' ? 'wss://' : 'ws://') + loc.host + '/ws/telemetry';
             ws = new WebSocket(wsUri);
 
             ws.onopen = () => {
                 console.log('[M3] Connected to IDR WebSocket backend');
+                if (pendingStart) {
+                    pendingStart = false;
+                    startSimulation();
+                }
             };
 
             ws.onmessage = (event) => {
@@ -1210,40 +1215,49 @@
         }
 
         function startSimulation() {
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                aiPoly.setLatLngs([]);
-                naivePoly.setLatLngs([]);
-                gtPoly.setLatLngs([]);
-                lastAiRef = { pt: null };
-                lastNaiveRef = { pt: null };
-                lastGtRef = { pt: null };
-                lastPanTime = 0;
-                outageManual = false;
-
-                const odoEl = document.getElementById('distOdoText');
-                const barEl = document.getElementById('distProgressBar');
-                if (odoEl) odoEl.innerText = '0.00 / 5.00 km';
-                if (barEl) barEl.style.width = '0%';
-
-                const aiErrEl = document.getElementById('valAiError');
-                if (aiErrEl) aiErrEl.innerText = '0.00';
-                const naiveErrEl = document.getElementById('valNaiveError');
-                if (naiveErrEl) naiveErrEl.innerText = '0.0';
-
-                document.getElementById('outageSwitch').classList.remove('m3-switch-active');
-                document.getElementById('statusBadge').className = 'm3-status-badge m3-status-active';
-                document.getElementById('statusText').innerText = 'GNSS ACTIVE (WGS84 3D FIX)';
-                document.getElementById('tunnelAlert').style.display = 'none';
-
-                ws.send(JSON.stringify({
-                    command: 'start_simulation',
-                    dataset_source: currentDataset,
-                    duration: 525.0,
-                    outage_start: 120.0,
-                    outage_end: 170.0,
-                    playback_speed: currentPlaybackSpeed
-                }));
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                console.warn('[M3] WebSocket not open, queueing start...');
+                pendingStart = true;
+                connectWS();
+                return;
             }
+
+            aiPoly.setLatLngs([]);
+            naivePoly.setLatLngs([]);
+            gtPoly.setLatLngs([]);
+            lastAiRef = { pt: null };
+            lastNaiveRef = { pt: null };
+            lastGtRef = { pt: null };
+            lastPanTime = 0;
+            outageManual = false;
+
+            const odoEl = document.getElementById('distOdoText');
+            const barEl = document.getElementById('distProgressBar');
+            if (odoEl) odoEl.innerText = '0.00 / 5.00 km';
+            if (barEl) barEl.style.width = '0%';
+
+            const aiErrEl = document.getElementById('valAiError');
+            if (aiErrEl) aiErrEl.innerText = '0.00';
+            const naiveErrEl = document.getElementById('valNaiveError');
+            if (naiveErrEl) naiveErrEl.innerText = '0.0';
+
+            const outageEl = document.getElementById('outageSwitch');
+            if (outageEl) outageEl.classList.remove('m3-switch-active');
+            const badgeEl = document.getElementById('statusBadge');
+            if (badgeEl) badgeEl.className = 'm3-status-badge m3-status-active';
+            const statusTextEl = document.getElementById('statusText');
+            if (statusTextEl) statusTextEl.innerText = 'GNSS ACTIVE (WGS84 3D FIX)';
+            const alertEl = document.getElementById('tunnelAlert');
+            if (alertEl) alertEl.style.display = 'none';
+
+            ws.send(JSON.stringify({
+                command: 'start_simulation',
+                dataset_source: currentDataset,
+                duration: 525.0,
+                outage_start: 120.0,
+                outage_end: 170.0,
+                playback_speed: currentPlaybackSpeed
+            }));
         }
 
         function toggleOutage() {
@@ -1272,10 +1286,14 @@
             lastNaiveRef = { pt: null };
             lastGtRef = { pt: null };
             outageManual = false;
-            document.getElementById('outageSwitch').classList.remove('m3-switch-active');
-            document.getElementById('statusBadge').className = 'm3-status-badge m3-status-active';
-            document.getElementById('statusText').innerText = 'GNSS ACTIVE (WGS84 3D FIX)';
-            document.getElementById('tunnelAlert').style.display = 'none';
+            const outageEl = document.getElementById('outageSwitch');
+            if (outageEl) outageEl.classList.remove('m3-switch-active');
+            const badgeEl = document.getElementById('statusBadge');
+            if (badgeEl) badgeEl.className = 'm3-status-badge m3-status-active';
+            const statusTextEl = document.getElementById('statusText');
+            if (statusTextEl) statusTextEl.innerText = 'GNSS ACTIVE (WGS84 3D FIX)';
+            const alertEl = document.getElementById('tunnelAlert');
+            if (alertEl) alertEl.style.display = 'none';
 
             const odoEl = document.getElementById('distOdoText');
             const barEl = document.getElementById('distProgressBar');

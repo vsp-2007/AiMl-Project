@@ -3,6 +3,8 @@
 
 An edge-optimized Intelligent Dead Reckoning (IDR) and Sensor Fusion Engine designed for high-accuracy autonomous vehicle navigation during extended GNSS outages (tunnels, dense urban canyons, and underpasses).
 
+> 📖 **Deep Dive Documentation**: For an in-depth breakdown of the project concepts, technologies used, mathematical formulations, and a complete technical glossary, see [**`PROJECT_OVERVIEW.md`**](file:///c:/Users/visnu/Desktop/aiml%20project/PROJECT_OVERVIEW.md).
+
 ---
 
 ## 🌟 System Overview & Architecture

@@ -210,6 +210,3 @@ python benchmark_iovnbd.py --data-path data/iovnbd_samples/V-S1.csv --outage-dur
 
 ---
 
-## 📜 License & Acknowledgements
-- Developed for the **Smart India Hackathon (SIH26168)** under the **ISRO / Smart Vehicles** problem statement.
-- Benchmark data courtesy of the **IO-VNBD** dataset (Coventry University).
